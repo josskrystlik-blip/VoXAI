@@ -26,6 +26,12 @@
     on_prem_stt_model: 'whisper-1',
     on_prem_stt_api_key: '',
     local_llm_api_key: '',
+    confluence_url: '',
+    confluence_auth: 'pat',
+    confluence_email: '',
+    confluence_token: '',
+    confluence_last_space: '',
+    confluence_last_parent: null,
     language_hint: 'fr'
   };
 
