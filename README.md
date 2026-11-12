@@ -1,6 +1,6 @@
 # 🎙️ VoxAI - Dictaphone Intelligent & Assistant de Conversation
 
-Service moderne de prise d'enregistrement vocal et de dictaphone, boosté par l'Intelligence Artificielle avec architecture hybride **Cloud (Google Gemini)** et **On-Premise (100% Souverain & Privé)**.
+Dictaphone web boosté par l'Intelligence Artificielle (**Google Gemini** ou **LLM local**), qui fonctionne entièrement dans le navigateur : hébergeable sur **GitHub Pages**, avec toutes les données stockées **localement** (IndexedDB).
 
 ---
 
@@ -28,62 +28,91 @@ Service moderne de prise d'enregistrement vocal et de dictaphone, boosté par l'
    - **Mode On-Premise (Local / Privé)** : Connectez vos modèles locaux (**Ollama**, **vLLM**, **faster-whisper**) pour une conformité RGPD totale sans fuite de données vers l'extérieur.
    - Bouton **"Tester la connexion"** intégré pour valider l'accès en 1 seconde.
 
-4. **Zéro Dépendance Externe Lourde** :
-   - Fonctionne avec Python 3 standard (aucun `npm install` ni compilation requise).
-   - Base de données locale intégrée **SQLite** (`dictaphone.db`).
-   - Interface Web responsive adaptée pour ordinateur et mobile.
+4. **100 % local, aucun serveur** :
+   - Application web statique : fonctionne directement depuis **GitHub Pages** (ou n'importe quel hébergement statique).
+   - Toutes les données (audios, transcriptions, synthèses, chat, réglages et clé d'API) sont stockées dans une **base locale du navigateur (IndexedDB)**. Rien n'est sauvegardé dans le cloud.
+   - Seule l'analyse IA sort de votre machine, et uniquement vers le fournisseur que vous choisissez (Gemini, ou votre LLM local en mode 100 % hors-ligne).
 
 ---
 
-## 🚀 Démarrage Rapide
+## 🚀 Démarrage
 
-### 1. Lancer le service
+### Option A — GitHub Pages (recommandé)
 
-Dans votre terminal, exécutez simplement :
+1. Dans le dépôt GitHub : **Settings → Pages**.
+2. **Source** : *Deploy from a branch*, branche `main`, dossier `/ (root)`, puis **Save**.
+3. Après une minute, l'application est en ligne sur `https://<votre-compte>.github.io/VoXAI/`.
+
+### Option B — En local
 
 ```bash
 ./start.sh
-# ou directement :
-python3 app.py
 ```
 
-L'application est immédiatement accessible dans votre navigateur à l'adresse :
-👉 **[http://localhost:8080](http://localhost:8080)**
+Puis ouvrez **[http://localhost:8080](http://localhost:8080)**.
+
+### Option C — Docker
+
+```bash
+docker run -d -p 8080:80 --name voxai ghcr.io/josskrystlik-blip/voxai:latest
+```
+
+ou, depuis le dépôt : `docker compose up -d`. Ouvrez ensuite **[http://localhost:8080](http://localhost:8080)**.
+
+L'image (nginx, ~75 Mo) ne sert que des fichiers statiques : elle ne stocke aucune donnée et ne journalise pas les requêtes.
+
+> 🎙️ Le micro n'est accessible au navigateur qu'en HTTPS ou sur `localhost`. Pour exposer le conteneur sur le réseau, placez-le derrière un reverse proxy HTTPS (Caddy, Traefik, nginx…). L'import de fichiers audio fonctionne dans tous les cas.
+
+### Option D — Release (livrable hors-ligne)
+
+Chaque [release](https://github.com/josskrystlik-blip/VoXAI/releases) contient :
+
+- `voxai-docker-X.Y.Z.zip` : image Docker hors-ligne et `docker-compose.yml` (`docker load -i …` puis `docker compose up -d`) ;
+- `voxai-web-X.Y.Z.zip` : le site statique, à déposer sur n'importe quel hébergement web ;
+- `SHA256SUMS.txt` : les empreintes de vérification.
+
+Pour publier une nouvelle version, il suffit de pousser un tag :
+
+```bash
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+Le workflow `.github/workflows/release.yml` construit l'image (amd64 + arm64), la publie sur `ghcr.io` et crée la release avec ses fichiers.
+
+> 💾 Les données sont propres à chaque navigateur et à chaque adresse : un enregistrement fait sur GitHub Pages n'apparaît pas sur `localhost`, et inversement. Vider les données du site dans le navigateur efface la base.
 
 ---
 
-## 🔑 Tester avec votre clé d'API Gemini
+## 🔑 Configurer la clé d'API Gemini
 
-1. Ouvrez l'application sur **[http://localhost:8080](http://localhost:8080)**.
-2. Cliquez sur l'icône **⚙️ (Paramètres)** en haut à droite.
-3. Sous l'onglet **Cloud (Gemini)** :
-   - Collez votre clé d'API Gemini *(si vous n'en avez pas encore, vous pouvez en générer une gratuitement sur [Google AI Studio](https://aistudio.google.com/apikey))*.
-   - Laissez le modèle sur `gemini-3.8-flash` (recommandé pour sa rapidité et sa précision audio).
-4. Cliquez sur **🔌 Tester la connexion** : vous verrez immédiatement le message de confirmation en vert.
-5. Cliquez sur **Enregistrer la configuration**.
+1. Cliquez sur l'icône **⚙️ (Paramètres)** en haut à droite.
+2. Sous l'onglet **Cloud (Gemini)**, collez votre clé d'API *(à générer sur [Google AI Studio](https://aistudio.google.com/apikey))*.
+3. Cliquez sur **🔌 Tester la connexion**, puis **Enregistrer la configuration**.
 
-Vous pouvez désormais enregistrer votre voix ou importer un fichier audio pour obtenir immédiatement la transcription et la synthèse !
+La clé est conservée uniquement dans la base locale de votre navigateur et envoyée directement à Google lors des analyses.
 
 ---
 
-## 🏢 Comment connecter un moteur On-Premise (plus tard)
+## 🏢 Mode On-Premise (LLM local)
 
-Pour basculer en mode 100% souverain sans envoyer de données sur le cloud :
+La page appelle votre serveur local directement depuis le navigateur. Il faut donc autoriser l'origine de la page (CORS).
 
-1. Installez et lancez **Ollama** sur votre machine :
+1. Lancez **Ollama** en autorisant l'origine de l'application :
    ```bash
-   ollama run llama3.2
+   OLLAMA_ORIGINS="https://<votre-compte>.github.io,http://localhost:8080" ollama serve
    ```
-2. Lancez un serveur Whisper local (compatible API OpenAI) :
+   puis `ollama pull llama3.2`.
+2. *(Optionnel, transcription 100 % hors-ligne)* : lancez un serveur Whisper compatible OpenAI avec CORS activé :
    ```bash
-   # Exemple avec Docker et faster-whisper-server :
    docker run -d -p 8000:8000 --gpus all fedirz/faster-whisper-server:latest-cuda
    ```
-3. Dans les réglages de VoxAI (**⚙️**), sélectionnez l'onglet **🔒 On-Premise (Local)** :
+3. Dans **⚙️ → 🔒 On-Premise (Local)** :
    - **URL LLM** : `http://localhost:11434/v1`
-   - **Modèle LLM** : `llama3.2` (ou `mistral`, `qwen2.5`)
+   - **Modèle LLM** : `llama3.2` (ou bouton de détection automatique)
    - **URL Whisper** : `http://localhost:8000/v1`
 4. Testez la connexion et enregistrez.
+
+> ℹ️ Chrome, Edge et Firefox autorisent une page HTTPS à appeler `http://localhost`. Safari le bloque : utilisez l'option B (`./start.sh`) dans ce cas.
 
 ---
 
@@ -91,27 +120,25 @@ Pour basculer en mode 100% souverain sans envoyer de données sur le cloud :
 
 ```text
 VoXAI/
-├── app.py               # Serveur backend (API REST, SQLite, client Gemini & On-Prem)
-├── start.sh             # Script de lancement en un clic
-├── config.example.json  # Modèle de configuration (copié en config.json au 1er lancement)
-├── config.json          # Configuration locale (clés d'API) — non versionnée
-├── dictaphone.db        # Base SQLite locale (créée automatiquement) — non versionnée
-├── static/
-│   ├── index.html       # Interface utilisateur du Dictaphone
-│   ├── app.js           # Web Audio API, waveform, lecteur audio et logique réactive
-│   └── style.css        # Styles et animations
-└── recordings/          # Fichiers audio (créé automatiquement) — non versionné
+├── index.html   # Interface utilisateur du Dictaphone
+├── app.js       # Web Audio API, waveform, lecteur audio et logique réactive
+├── db.js        # « Backend » local : base IndexedDB + appels IA (Gemini / LLM local)
+├── style.css    # Styles et animations
+├── start.sh     # Serveur statique pour un usage local
+├── Dockerfile   # Image Docker (nginx) + docker/nginx.conf
+├── docker-compose.yml
+├── .github/workflows/release.yml  # Release + image ghcr.io sur tag vX.Y.Z
+└── .nojekyll    # Publication telle quelle sur GitHub Pages
 ```
 
-> 🔐 `config.json`, `dictaphone.db` et `recordings/` sont exclus du dépôt via `.gitignore` : ne commitez jamais vos clés d'API.
-
----
-
-## 🛠️ API REST Disponible
+## 🛠️ API interne (servie par `db.js` dans le navigateur)
 
 | Méthode | Route | Description |
 | :--- | :--- | :--- |
 | `GET` | `/api/config` | Récupère la configuration actuelle |
+| `GET` | `/api/local-models?url=` | Détecte les modèles d'un serveur LLM local |
+| `POST` | `/api/recordings/create` | Crée une session multi-fichiers |
+| `POST` | `/api/recordings/<id>/files` | Ajoute un fichier audio à une session |
 | `POST` | `/api/config` | Met à jour les clés API et paramètres |
 | `POST` | `/api/test-connection` | Valide la connexion au LLM (Gemini ou On-Prem) |
 | `GET` | `/api/recordings` | Liste tous les enregistrements |
@@ -120,4 +147,3 @@ VoXAI/
 | `POST` | `/api/recordings/<id>/process` | Déclenche l'analyse et la transcription IA |
 | `POST` | `/api/recordings/<id>/chat` | Pose une question sur l'enregistrement à l'IA |
 | `DELETE` | `/api/recordings/<id>` | Supprime l'audio et ses métadonnées |
-| `GET` | `/audio/<filename>` | Flux de lecture audio pour le lecteur intégré |

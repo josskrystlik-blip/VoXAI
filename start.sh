@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-# Script de lancement VoxAI
+# Lance VoxAI en local (sans GitHub Pages) : simple serveur de fichiers statiques.
+# Les données restent dans la base locale du navigateur (IndexedDB).
 cd "$(dirname "$0")"
-if [ ! -f config.json ]; then
-  cp config.example.json config.json
-  echo "ℹ️  config.json créé depuis config.example.json"
-fi
-echo "🎙️ Lancement de VoxAI (Dictaphone Intelligent)..."
-exec python3 app.py
+PORT="${PORT:-8080}"
+echo "🎙️ VoxAI disponible sur http://localhost:$PORT"
+exec python3 -m http.server "$PORT"

@@ -1,0 +1,8 @@
+services:
+  voxai:
+    image: ghcr.io/josskrystlik-blip/voxai:latest
+    build: .
+    container_name: voxai
+    ports:
+      - "8080:80"
+    restart: unless-stopped
