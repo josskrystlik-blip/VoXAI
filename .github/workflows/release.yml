@@ -1,0 +1,113 @@
+name: Release
+
+# Publie une release à chaque tag vX.Y.Z :
+#  - image Docker multi-architecture sur GitHub Packages (ghcr.io)
+#  - archive du site statique + image Docker hors-ligne jointes à la release GitHub
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag existant à publier (ex. v1.0.0)"
+        required: true
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/voxai
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Déterminer la version
+        id: v
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.v.outputs.tag }}
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Métadonnées de l'image
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ steps.v.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.v.outputs.tag }}
+            type=raw,value=latest
+
+      - name: Construire et publier l'image (amd64 + arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Préparer les livrables
+        run: |
+          V="${{ steps.v.outputs.version }}"
+          mkdir -p dist "voxai-web-$V" "voxai-docker-$V"
+
+          # 1. Site statique, à déposer sur n'importe quel hébergement web
+          cp index.html app.js db.js style.css LICENSE README.md "voxai-web-$V/"
+          zip -qr "dist/voxai-web-$V.zip" "voxai-web-$V"
+
+          # 2. Image Docker hors-ligne (amd64) + compose prêt à l'emploi
+          docker buildx build --platform linux/amd64 -t "voxai:$V" --load .
+          docker save "voxai:$V" | gzip > "voxai-docker-$V/voxai-image-$V-amd64.tar.gz"
+          sed "s#image: .*#image: voxai:$V#; /build: ./d" docker-compose.yml > "voxai-docker-$V/docker-compose.yml"
+          cat > "voxai-docker-$V/INSTALL.txt" <<EOF
+          VoxAI $V - installation hors-ligne
+
+            docker load -i voxai-image-$V-amd64.tar.gz
+            docker compose up -d
+
+          Puis ouvrir http://localhost:8080
+          EOF
+          zip -qr "dist/voxai-docker-$V.zip" "voxai-docker-$V"
+
+          (cd dist && sha256sum * > SHA256SUMS.txt)
+          ls -lh dist
+
+      - name: Créer la release GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.v.outputs.tag }}
+          name: VoxAI ${{ steps.v.outputs.tag }}
+          generate_release_notes: true
+          files: dist/*
+          body: |
+            ## 🐳 Docker
+
+            ```bash
+            docker run -d -p 8080:80 --name voxai ${{ env.IMAGE }}:${{ steps.v.outputs.version }}
+            ```
+
+            Puis ouvrez http://localhost:8080. Les données restent dans le navigateur (IndexedDB) : rien n'est stocké sur le serveur ni dans le cloud.
+
+            ## 📦 Livrables
+
+            | Fichier | Usage |
+            | :--- | :--- |
+            | `voxai-docker-${{ steps.v.outputs.version }}.zip` | Image Docker hors-ligne (amd64) + `docker-compose.yml` |
+            | `voxai-web-${{ steps.v.outputs.version }}.zip` | Site statique à déposer sur n'importe quel hébergement web |
+            | `SHA256SUMS.txt` | Empreintes de vérification |

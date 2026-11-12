@@ -51,6 +51,34 @@ Dictaphone web boosté par l'Intelligence Artificielle (**Google Gemini** ou **L
 
 Puis ouvrez **[http://localhost:8080](http://localhost:8080)**.
 
+### Option C — Docker
+
+```bash
+docker run -d -p 8080:80 --name voxai ghcr.io/josskrystlik-blip/voxai:latest
+```
+
+ou, depuis le dépôt : `docker compose up -d`. Ouvrez ensuite **[http://localhost:8080](http://localhost:8080)**.
+
+L'image (nginx, ~75 Mo) ne sert que des fichiers statiques : elle ne stocke aucune donnée et ne journalise pas les requêtes.
+
+> 🎙️ Le micro n'est accessible au navigateur qu'en HTTPS ou sur `localhost`. Pour exposer le conteneur sur le réseau, placez-le derrière un reverse proxy HTTPS (Caddy, Traefik, nginx…). L'import de fichiers audio fonctionne dans tous les cas.
+
+### Option D — Release (livrable hors-ligne)
+
+Chaque [release](https://github.com/josskrystlik-blip/VoXAI/releases) contient :
+
+- `voxai-docker-X.Y.Z.zip` : image Docker hors-ligne et `docker-compose.yml` (`docker load -i …` puis `docker compose up -d`) ;
+- `voxai-web-X.Y.Z.zip` : le site statique, à déposer sur n'importe quel hébergement web ;
+- `SHA256SUMS.txt` : les empreintes de vérification.
+
+Pour publier une nouvelle version, il suffit de pousser un tag :
+
+```bash
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+Le workflow `.github/workflows/release.yml` construit l'image (amd64 + arm64), la publie sur `ghcr.io` et crée la release avec ses fichiers.
+
 > 💾 Les données sont propres à chaque navigateur et à chaque adresse : un enregistrement fait sur GitHub Pages n'apparaît pas sur `localhost`, et inversement. Vider les données du site dans le navigateur efface la base.
 
 ---
@@ -97,6 +125,9 @@ VoXAI/
 ├── db.js        # « Backend » local : base IndexedDB + appels IA (Gemini / LLM local)
 ├── style.css    # Styles et animations
 ├── start.sh     # Serveur statique pour un usage local
+├── Dockerfile   # Image Docker (nginx) + docker/nginx.conf
+├── docker-compose.yml
+├── .github/workflows/release.yml  # Release + image ghcr.io sur tag vX.Y.Z
 └── .nojekyll    # Publication telle quelle sur GitHub Pages
 ```
 

@@ -1,0 +1,6 @@
+*
+!index.html
+!app.js
+!db.js
+!style.css
+!docker/nginx.conf
