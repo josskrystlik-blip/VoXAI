@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="fr" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VoxAI — Dictaphone Intelligent & Transcription IA</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22%20width=%2216%22%20height=%2216%22><text y=%2214%22 font-size=%2214%22>🎙️</text></svg>">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="h-full flex flex-col font-sans antialiased overflow-hidden">
+
+  <!-- ==================== DRAG & DROP FULLSCREEN OVERLAY ==================== -->
+  <div id="dragDropOverlay" class="fixed inset-0 bg-slate-950/90 backdrop-blur-xl z-50 flex-col items-center justify-center border-2 border-dashed border-indigo-500/70 text-center transition-all cursor-pointer" style="display: none;">
+    <div class="w-20 h-20 rounded-3xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-4xl mb-4 shadow-2xl shadow-indigo-500/30 animate-bounce pointer-events-none">
+      🎙️
+    </div>
+    <h3 class="text-2xl font-bold text-white mb-2 tracking-tight pointer-events-none">Déposez vos enregistrements audio ici</h3>
+    <p class="text-sm text-slate-300 max-w-md pointer-events-none">Déposez un ou plusieurs fichiers (MP3, WAV, M4A, WebM) pour lancer immédiatement l'analyse conjointe.</p>
+    <span class="text-[11px] text-slate-500 mt-4 pointer-events-none">(Cliquez n'importe où pour fermer)</span>
+  </div>
+
+  <!-- ==================== HEADER ==================== -->
+  <header class="h-16 border-b border-white/[0.06] bg-slate-950/70 backdrop-blur-xl px-6 flex items-center justify-between z-20 shrink-0">
+    <div class="flex items-center gap-3.5">
+      <div class="relative group cursor-pointer" id="headerLogoBtn">
+        <div class="absolute -inset-1 rounded-2xl bg-gradient-to-r from-indigo-500 to-fuchsia-500 opacity-40 blur group-hover:opacity-75 transition duration-300"></div>
+        <div class="relative w-10 h-10 rounded-xl bg-slate-900 border border-white/10 flex items-center justify-center shadow-lg">
+          <svg class="w-5 h-5 text-indigo-400 group-hover:text-indigo-300 transition-transform group-hover:scale-110" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+          </svg>
+        </div>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-lg font-bold tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">VoxAI</h1>
+          <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-gradient-to-r from-indigo-500/20 to-purple-500/20 text-indigo-300 border border-indigo-500/30">AI Dictaphone</span>
+        </div>
+        <p class="text-[11px] text-slate-400 font-medium">Capture vocale • Synthèse unifiée multi-audios • Confidentialité</p>
+      </div>
+    </div>
+
+    <!-- Right Controls -->
+    <div class="flex items-center gap-3">
+      <!-- Active Provider Badge -->
+      <button id="providerBadgeBtn" class="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-900/80 border border-white/10 hover:border-indigo-500/40 hover:bg-slate-800/60 transition shadow-sm">
+        <span id="providerDot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span id="providerName" class="text-slate-300 font-mono text-[11px]">Cloud (gemini-3.5-flash-lite)</span>
+      </button>
+
+      <!-- Settings Button -->
+      <button id="openSettingsBtn" title="Paramètres IA & Souveraineté" class="p-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-white/10 hover:border-white/20 transition shadow-sm group">
+        <svg class="w-4 h-4 transition-transform group-hover:rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ==================== MAIN CONTENT ==================== -->
+  <div class="flex-1 flex overflow-hidden relative z-10">
+
+    <!-- ==================== SIDEBAR ==================== -->
+    <aside class="w-80 border-r border-white/[0.06] bg-slate-950/50 backdrop-blur-md flex flex-col shrink-0">
+      <div class="p-4 border-b border-white/[0.06] flex flex-col gap-2.5">
+        <button id="newRecordBtn" class="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:from-indigo-500 hover:to-purple-500 font-semibold text-xs text-white shadow-lg shadow-indigo-600/25 transition-all hover:scale-[1.01] active:scale-[0.99]">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+          </svg>
+          Nouvel enregistrement
+        </button>
+
+        <label class="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-slate-900/60 hover:bg-slate-900 text-xs font-medium text-slate-300 border border-dashed border-white/15 hover:border-indigo-500/50 cursor-pointer transition group">
+          <svg class="w-4 h-4 text-slate-400 group-hover:text-indigo-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+          </svg>
+          <span>Importer audios (1 ou plusieurs)</span>
+          <input type="file" id="fileUploadInput" accept="audio/*" multiple class="hidden" />
+        </label>
+      </div>
+
+      <!-- Search Bar -->
+      <div class="px-4 py-3">
+        <div class="relative">
+          <input type="text" id="searchRecordings" placeholder="Rechercher une session..." class="w-full bg-slate-900/60 border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500/60 focus:bg-slate-900 transition">
+          <svg class="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+          </svg>
+        </div>
+      </div>
+
+      <!-- Recordings List -->
+      <div id="recordingsList" class="flex-1 overflow-y-auto px-3 py-1 space-y-1.5">
+        <!-- Rempli dynamiquement en JS -->
+      </div>
+    </aside>
+
+    <!-- ==================== CENTER WORKSPACE ==================== -->
+    <main class="flex-1 flex flex-col overflow-hidden relative">
+
+      <!-- ==================== SCREEN 1: ENREGISTREUR (DICTAPHONE) ==================== -->
+      <section id="recorderView" class="flex-1 flex flex-col items-center justify-center p-8 relative">
+        <div class="max-w-xl w-full flex flex-col items-center text-center space-y-6">
+
+          <!-- Titre d'enregistrement optionnel -->
+          <div class="w-full max-w-md">
+            <input type="text" id="recordTitleInput" placeholder="Titre de la conversation (ex: Point Projet, Débat...)" class="w-full bg-slate-900/50 border border-white/10 rounded-2xl px-5 py-3 text-center text-sm font-medium text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500/70 focus:bg-slate-900/80 shadow-lg transition">
+          </div>
+
+          <!-- Waveform Visualizer with Ambient Glass -->
+          <div class="w-full h-40 bg-slate-900/40 rounded-3xl border border-white/10 p-5 flex flex-col items-center justify-center relative overflow-hidden shadow-2xl backdrop-blur-md">
+            <canvas id="waveformCanvas" class="w-full h-full"></canvas>
+            <div id="micPrompt" class="absolute inset-0 flex flex-col items-center justify-center text-xs text-slate-400 font-medium pointer-events-none gap-1">
+              <span class="text-sm">🎙️</span>
+              <span>Cliquez sur le bouton pour démarrer l'enregistrement</span>
+            </div>
+            
+            <!-- Live Audio Specs badge -->
+            <div class="absolute bottom-3 right-4 flex items-center gap-2 text-[10px] font-mono text-slate-400 opacity-60">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+              <span>48 kHz • Web Audio</span>
+            </div>
+          </div>
+
+          <!-- Timer with Monospace Typography -->
+          <div class="flex items-center gap-3">
+            <span id="recordingDot" class="w-3.5 h-3.5 rounded-full bg-rose-500 hidden animate-pulse shadow-lg shadow-rose-500/50"></span>
+            <div id="recordTimer" class="font-mono text-5xl font-extrabold tracking-tight text-white drop-shadow-sm">00:00</div>
+          </div>
+
+          <!-- Dictaphone Action Buttons -->
+          <div class="flex items-center justify-center gap-6 pt-2">
+            <!-- Pause / Resume Button -->
+            <button id="pauseRecordBtn" class="hidden p-4 rounded-full bg-slate-900/80 hover:bg-slate-800 text-slate-300 border border-white/10 hover:border-white/20 transition shadow-lg hover:scale-105 active:scale-95" title="Mettre en pause">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+              </svg>
+            </button>
+
+            <!-- Main Mic Record / Stop Button -->
+            <div class="relative group">
+              <div id="micRing" class="absolute -inset-3 rounded-full bg-indigo-500/20 blur-xl transition group-hover:bg-indigo-500/35"></div>
+              <button id="mainRecordBtn" class="mic-btn-main relative">
+                <svg id="micIcon" class="w-8 h-8 text-white drop-shadow" width="32" height="32" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"/>
+                </svg>
+                <div id="stopSquare" class="w-6 h-6 rounded-md bg-white hidden shadow-md"></div>
+              </button>
+            </div>
+
+            <!-- Cancel Button -->
+            <button id="cancelRecordBtn" class="hidden p-4 rounded-full bg-slate-900/80 hover:bg-slate-800 text-slate-400 hover:text-rose-400 border border-white/10 hover:border-white/20 transition shadow-lg hover:scale-105 active:scale-95" title="Annuler">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+              </svg>
+            </button>
+          </div>
+
+          <div id="recordStatusText" class="text-xs text-slate-400 font-medium">
+            Prêt à enregistrer
+          </div>
+        </div>
+      </section>
+
+      <!-- ==================== SCREEN 2: DETAILS DE L'ENREGISTREMENT ==================== -->
+      <section id="detailsView" class="hidden flex-1 flex flex-col h-full overflow-hidden">
+
+        <!-- Top Bar of Detail -->
+        <div class="p-6 border-b border-white/[0.06] bg-slate-950/40 backdrop-blur-xl flex flex-col gap-4 shrink-0">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <h2 id="detailTitle" class="text-xl font-bold text-white tracking-tight">Titre de la conversation</h2>
+              <span id="detailStatusBadge" class="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Terminé</span>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button id="reprocessBtn" title="Relancer l'analyse IA" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-200 border border-white/10 hover:border-indigo-500/40 transition shadow-sm">
+                <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                Relancer IA
+              </button>
+              <button id="exportMarkdownBtn" title="Copier la synthèse au format Markdown" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-200 border border-white/10 hover:border-white/20 transition shadow-sm">
+                <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/>
+                </svg>
+                Copier
+              </button>
+              <button id="deleteRecordBtn" title="Supprimer cet enregistrement" class="p-2 rounded-xl text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 transition">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-4 text-xs text-slate-400 flex-wrap">
+            <span id="detailDate">06 Nov 2026</span>
+            <span>•</span>
+            <span id="detailDuration" class="font-mono">02:15</span>
+            <span>•</span>
+            <span id="detailSize">1.2 MB</span>
+            <span>•</span>
+            <span id="detailFilesBadge" class="px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 font-medium">1 fichier</span>
+            
+            <label class="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-slate-200 border border-white/10 hover:border-indigo-500/40 cursor-pointer transition shadow-sm">
+              <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+              </svg>
+              <span class="font-semibold text-xs">+ Ajouter un audio</span>
+              <input type="file" id="addFileInput" accept="audio/*" multiple class="hidden" />
+            </label>
+          </div>
+
+          <!-- Multi-track selector pills -->
+          <div id="trackSelectorContainer" class="hidden flex items-center gap-2 overflow-x-auto pb-1 pt-1 text-xs">
+            <span class="text-slate-400 text-[11px] font-semibold shrink-0">Pistes :</span>
+            <div id="trackPillsList" class="flex items-center gap-1.5 flex-nowrap">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+
+          <!-- Embedded Luxury Audio Player -->
+          <div class="glass-card p-3.5 flex items-center gap-4 shadow-xl border border-white/10">
+            <!-- Play/Pause Button -->
+            <button id="playerPlayBtn" class="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white flex items-center justify-center shrink-0 shadow-lg shadow-indigo-600/30 transition-transform active:scale-95">
+              <svg id="playerPlayIcon" class="w-4 h-4 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+              </svg>
+              <svg id="playerPauseIcon" class="w-4 h-4 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6"/>
+              </svg>
+            </button>
+
+            <!-- -10s / +10s Jump Buttons -->
+            <div class="flex items-center gap-1">
+              <button id="playerRewindBtn" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition" title="Reculer de 10 secondes">
+                <span class="text-[11px] font-mono font-bold">-10s</span>
+              </button>
+              <button id="playerForwardBtn" class="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/5 transition" title="Avancer de 10 secondes">
+                <span class="text-[11px] font-mono font-bold">+10s</span>
+              </button>
+            </div>
+
+            <span id="playerCurrentTime" class="text-xs font-mono text-slate-300 w-11 text-right">00:00</span>
+            <input type="range" id="playerSeek" value="0" min="0" max="100" class="flex-1 cursor-pointer">
+            <span id="playerTotalTime" class="text-xs font-mono text-slate-400 w-11">00:00</span>
+
+            <!-- Speed Selector -->
+            <select id="playerSpeed" class="bg-slate-900 border border-white/10 text-slate-200 text-xs rounded-xl px-2.5 py-1.5 focus:outline-none focus:border-indigo-500 cursor-pointer font-medium">
+              <option value="0.8">0.8x</option>
+              <option value="1" selected>1.0x</option>
+              <option value="1.25">1.25x</option>
+              <option value="1.5">1.5x</option>
+              <option value="2">2.0x</option>
+            </select>
+
+            <audio id="audioElement" class="hidden"></audio>
+          </div>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="border-b border-white/[0.06] bg-slate-950/20 px-6 flex items-center gap-8 text-sm font-semibold shrink-0">
+          <button id="tabSummaryBtn" class="tab-btn active py-3.5 border-b-2 border-indigo-500 text-indigo-400 flex items-center gap-2 transition">
+            <span>✨</span> Synthèse IA & Plan d'action
+          </button>
+          <button id="tabTranscriptBtn" class="tab-btn py-3.5 border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-2 transition">
+            <span>📝</span> Transcription mot pour mot
+          </button>
+          <button id="tabChatBtn" class="tab-btn py-3.5 border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-2 transition">
+            <span>💬</span> Assistant IA
+          </button>
+        </div>
+
+        <!-- Tab Contents -->
+        <div class="flex-1 overflow-y-auto p-6">
+
+          <!-- TAB 1: SYNTHESE -->
+          <div id="tabContentSummary" class="max-w-4xl mx-auto space-y-6">
+
+            <!-- Executive Summary with AI Radiant Border -->
+            <div class="ai-border-wrap">
+              <div class="ai-border-content p-6">
+                <div class="flex items-center gap-2 text-indigo-400 text-xs font-bold uppercase tracking-wider mb-3">
+                  <span class="text-base">✨</span>
+                  <span>Résumé Exécutif Consolidé</span>
+                </div>
+                <p id="summaryExecutive" class="text-slate-100 leading-relaxed text-sm">
+                  En attente du traitement IA...
+                </p>
+              </div>
+            </div>
+
+            <!-- Decisions & Action Items Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+              <!-- Decisions -->
+              <div class="glass-card p-6 flex flex-col">
+                <div class="flex items-center gap-2 text-emerald-400 text-xs font-bold uppercase tracking-wider mb-4">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                  </svg>
+                  <span>Décisions Clés Validées</span>
+                </div>
+                <ul id="summaryDecisions" class="space-y-2.5 text-xs text-slate-200 flex-1">
+                  <li class="text-slate-500 italic">Aucune décision recensée.</li>
+                </ul>
+              </div>
+
+              <!-- Action Items -->
+              <div class="glass-card p-6 flex flex-col">
+                <div class="flex items-center gap-2 text-purple-400 text-xs font-bold uppercase tracking-wider mb-4">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                  </svg>
+                  <span>Plan d'Action (À faire)</span>
+                </div>
+                <div id="summaryActions" class="space-y-2.5 text-xs text-slate-200 flex-1">
+                  <p class="text-slate-500 italic">Aucune action requise.</p>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Key Topics / Points Abordés -->
+            <div class="glass-card p-6">
+              <div class="flex items-center gap-2 text-amber-400 text-xs font-bold uppercase tracking-wider mb-4">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"/>
+                </svg>
+                <span>Points Clés & Thématiques</span>
+              </div>
+              <ul id="summaryKeyPoints" class="list-disc list-inside space-y-2 text-xs text-slate-200 mb-5 leading-relaxed">
+              </ul>
+              <div id="summaryTags" class="flex flex-wrap gap-2 pt-3 border-t border-white/[0.06]">
+              </div>
+            </div>
+
+          </div>
+
+          <!-- TAB 2: TRANSCRIPTION -->
+          <div id="tabContentTranscript" class="hidden max-w-4xl mx-auto">
+            <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+              <div class="flex items-center gap-2">
+                <input type="text" id="searchTranscript" placeholder="Rechercher dans la transcription..." class="bg-slate-900 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500 w-64">
+              </div>
+              <button id="copyTranscriptBtn" class="text-xs text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1.5 transition">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                </svg>
+                <span>Copier tout le texte</span>
+              </button>
+            </div>
+            <div id="transcriptTimeline" class="space-y-3.5">
+              <!-- Rempli en JS -->
+            </div>
+          </div>
+
+          <!-- TAB 3: CHAT ASSISTANT -->
+          <div id="tabContentChat" class="hidden max-w-3xl mx-auto flex flex-col h-full space-y-4">
+            <div class="bg-gradient-to-r from-indigo-950/40 to-purple-950/30 border border-indigo-500/20 rounded-2xl p-4 text-xs text-indigo-200 flex items-center gap-3">
+              <span class="text-lg">💡</span>
+              <span>Posez n'importe quelle question sur l'ensemble de ces enregistrements. L'IA se base sur la transcription intégrale pour vous répondre.</span>
+            </div>
+
+            <!-- Suggestions chips -->
+            <div class="flex flex-wrap gap-2 text-xs">
+              <button class="chat-prompt-chip px-3.5 py-1.5 rounded-full bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-white/10 transition shadow-sm">
+                ✉️ Rédige un e-mail de synthèse pour les participants
+              </button>
+              <button class="chat-prompt-chip px-3.5 py-1.5 rounded-full bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-white/10 transition shadow-sm">
+                ⚠️ Quels sont les points de blocage mentionnés ?
+              </button>
+              <button class="chat-prompt-chip px-3.5 py-1.5 rounded-full bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-white/10 transition shadow-sm">
+                📅 Extrait les dates et échéances
+              </button>
+            </div>
+
+            <!-- Chat Message List -->
+            <div id="chatMessages" class="flex-1 overflow-y-auto space-y-3 min-h-[320px] p-4 glass-card border border-white/10">
+              <div class="p-3.5 rounded-2xl bg-slate-800/50 border border-white/10 text-xs text-slate-300">
+                Bonjour ! Que souhaitez-vous savoir ou générer à partir de cette conversation ?
+              </div>
+            </div>
+
+            <!-- Chat Input -->
+            <form id="chatForm" class="flex items-center gap-2 pt-1">
+              <input type="text" id="chatInput" placeholder="Posez une question sur cet enregistrement..." class="flex-1 bg-slate-900/90 border border-white/10 rounded-2xl px-4 py-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition shadow-inner">
+              <button type="submit" id="chatSendBtn" class="px-5 py-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-semibold text-xs shadow-lg shadow-indigo-600/30 transition flex items-center gap-1.5">
+                <span>Envoyer</span>
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/>
+                </svg>
+              </button>
+            </form>
+          </div>
+
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ==================== MODAL DE CONFIGURATION ==================== -->
+  <div id="settingsModal" class="fixed inset-0 bg-black/75 backdrop-blur-md z-50 items-center justify-center p-4 hidden" style="display: none;">
+    <div class="glass-panel rounded-3xl w-full max-w-lg shadow-2xl flex flex-col overflow-hidden border border-white/15">
+      
+      <!-- Modal Header -->
+      <div class="px-6 py-4.5 border-b border-white/10 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <span class="text-xl">⚙️</span>
+          <h3 class="text-base font-bold text-white tracking-tight">Moteurs d'IA & Confidentialité</h3>
+        </div>
+        <button id="closeSettingsBtn" class="text-slate-400 hover:text-white p-1 rounded-lg transition">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-6 space-y-6 overflow-y-auto max-h-[80vh]">
+
+        <!-- Provider Switcher Tabs -->
+        <div>
+          <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Sélectionnez le moteur d'intelligence artificielle</label>
+          <div class="grid grid-cols-2 gap-2 bg-slate-900/90 p-1.5 rounded-2xl border border-white/10">
+            <button type="button" id="selectGeminiProvider" class="provider-toggle-btn active py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition bg-indigo-600 text-white shadow-md">
+              <span>☁️</span> Google Gemini (Cloud)
+            </button>
+            <button type="button" id="selectOnPremProvider" class="provider-toggle-btn py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 text-slate-400 hover:text-slate-200 transition">
+              <span>💻</span> Mon LLM Local (Open Source)
+            </button>
+          </div>
+        </div>
+
+        <!-- CONFIGURATION CLOUD (GEMINI) -->
+        <div id="geminiConfigSection" class="space-y-4">
+          <div class="p-3.5 bg-indigo-950/30 border border-indigo-500/20 rounded-2xl text-xs text-indigo-300 leading-relaxed">
+            Utilise l'API Google Gemini pour une transcription audio multimodale ultra-rapide et une synthèse instantanée.
+          </div>
+
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="text-xs font-semibold text-slate-300">Clé d'API Gemini</label>
+              <a href="https://aistudio.google.com/apikey" target="_blank" class="text-[11px] text-indigo-400 hover:underline font-medium">Obtenir une clé gratuite ↗</a>
+            </div>
+            <div class="relative">
+              <input type="password" id="geminiApiKeyInput" placeholder="AIzaSy..." class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500 font-mono">
+              <button type="button" id="toggleApiKeyVisibility" class="absolute right-3.5 top-3 text-slate-400 hover:text-slate-200 text-xs">👁️</button>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1.5">Modèle Gemini</label>
+            <select id="geminiModelSelect" class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 font-medium">
+              <option value="gemini-3.5-flash-lite" selected>gemini-3.5-flash-lite (Recommandé - Ultra rapide & Haute disponibilité)</option>
+              <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite (Rapide)</option>
+              <option value="gemini-3.8-flash">gemini-3.8-flash (Équilibré & Raisonnement)</option>
+              <option value="gemini-4-argon">gemini-4-argon (Raisonnement avancé)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- CONFIGURATION MON LLM LOCAL (OPEN SOURCE) -->
+        <div id="onPremConfigSection" class="hidden space-y-4">
+          <div class="p-3.5 bg-purple-950/30 border border-purple-500/20 rounded-2xl text-xs text-purple-200 leading-relaxed">
+            <strong>💻 100% Souverain & Privé :</strong> Connectez votre LLM Open Source exécuté localement sur votre machine (Ollama, LM Studio, vLLM, llama.cpp, LocalAI). Aucune synthèse ou discussion ne quitte votre ordinateur !
+          </div>
+
+          <!-- Presets Rapides -->
+          <div>
+            <label class="block text-[11px] font-semibold text-slate-400 mb-1.5">Préconfigurations rapides :</label>
+            <div class="flex flex-wrap gap-1.5">
+              <button type="button" class="preset-btn px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-white/10 hover:border-purple-500/40 text-xs text-slate-200 transition font-medium flex items-center gap-1.5" data-preset="ollama" data-url="http://localhost:11434/v1" data-model="llama3.2">
+                <span>🦙</span> Ollama
+              </button>
+              <button type="button" class="preset-btn px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-white/10 hover:border-purple-500/40 text-xs text-slate-200 transition font-medium flex items-center gap-1.5" data-preset="lm_studio" data-url="http://localhost:1234/v1" data-model="local-model">
+                <span>🧪</span> LM Studio
+              </button>
+              <button type="button" class="preset-btn px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-white/10 hover:border-purple-500/40 text-xs text-slate-200 transition font-medium flex items-center gap-1.5" data-preset="vllm" data-url="http://localhost:8000/v1" data-model="default">
+                <span>⚡</span> vLLM
+              </button>
+              <button type="button" class="preset-btn px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-white/10 hover:border-purple-500/40 text-xs text-slate-200 transition font-medium flex items-center gap-1.5" data-preset="custom">
+                <span>⚙️</span> Autre / Custom
+              </button>
+            </div>
+          </div>
+
+          <!-- URL du serveur avec Détecteur automatique -->
+          <div>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="text-xs font-semibold text-slate-300">URL du serveur LLM local (API OpenAI compatible)</label>
+            </div>
+            <div class="flex gap-2">
+              <input type="text" id="onPremLlmUrl" value="http://localhost:11434/v1" placeholder="http://localhost:11434/v1" class="flex-1 bg-slate-900/80 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-purple-500">
+              <button type="button" id="detectLocalModelsBtn" class="px-3.5 py-2.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 hover:text-white border border-purple-500/30 text-xs font-semibold transition shrink-0 flex items-center gap-1.5 shadow-sm">
+                <span>🔍</span> Détecter mes modèles
+              </button>
+            </div>
+            <div id="detectModelsStatus" class="text-[11px] text-slate-400 mt-1 min-h-[16px]"></div>
+          </div>
+
+          <!-- Sélection du modèle local -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1.5">Modèle LLM local</label>
+            <div class="space-y-2">
+              <select id="localModelSelect" class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-purple-500">
+                <option value="llama3.2">llama3.2 (Défaut Ollama)</option>
+                <option value="mistral">mistral</option>
+                <option value="qwen2.5:7b">qwen2.5:7b</option>
+                <option value="deepseek-r1:8b">deepseek-r1:8b</option>
+                <option value="__custom__">✏️ Saisir manuellement un autre nom...</option>
+              </select>
+              <input type="text" id="onPremLlmModel" value="llama3.2" placeholder="Nom exact du modèle (ex: llama3.2, mistral, qwen2.5:14b...)" class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-purple-500">
+            </div>
+          </div>
+
+          <!-- Choix du Mode de Transcription Audio -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1.5">Mode de transcription audio (STT)</label>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <label id="sttModeCloudLabel" class="cursor-pointer p-3 rounded-2xl border border-purple-500/40 bg-purple-950/20 flex flex-col gap-1 transition hover:bg-purple-950/30">
+                <div class="flex items-center gap-2">
+                  <input type="radio" name="local_stt_mode" value="cloud" checked class="text-purple-600 focus:ring-0">
+                  <span class="text-xs font-bold text-white">☁️ Hybride (Conseillé)</span>
+                </div>
+                <span class="text-[11px] text-slate-300 leading-tight">Transcription rapide Cloud (Gemini) + Synthèse 100% sur votre LLM local (Aucun GPU requis).</span>
+              </label>
+
+              <label id="sttModeLocalLabel" class="cursor-pointer p-3 rounded-2xl border border-white/10 bg-slate-900/40 flex flex-col gap-1 transition hover:bg-slate-900/60">
+                <div class="flex items-center gap-2">
+                  <input type="radio" name="local_stt_mode" value="local" class="text-purple-600 focus:ring-0">
+                  <span class="text-xs font-bold text-slate-300">🔒 100% Hors-Ligne</span>
+                </div>
+                <span class="text-[11px] text-slate-400 leading-tight">Whisper Local (STT) + LLM Local. Nécessite un serveur Whisper GPU local.</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Configuration Whisper Local (affiché si 100% local choisi) -->
+          <div id="whisperLocalConfigContainer" class="hidden space-y-1.5 pt-1">
+            <label class="block text-xs font-semibold text-slate-300">URL du serveur Whisper local (STT)</label>
+            <input type="text" id="onPremSttUrl" value="http://localhost:8000/v1" class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-purple-500">
+            <span class="text-[11px] text-slate-500 block">Serveur compatible OpenAI audio transcription (ex: faster-whisper-server ou whisper.cpp).</span>
+          </div>
+
+          <!-- Guide rapide -->
+          <div class="p-3 bg-slate-900/60 rounded-xl border border-white/5 text-[11px] text-slate-400 space-y-1">
+            <div class="font-semibold text-slate-300 flex items-center gap-1.5">
+              <span>💡</span>
+              <span>Démarrage rapide de votre modèle local :</span>
+            </div>
+            <div>• <strong>Ollama :</strong> Ouvrez votre terminal et tapez <code>ollama run llama3.2</code> ou <code>ollama run mistral</code></div>
+            <div>• <strong>LM Studio :</strong> Dans l'onglet <em>Local Server</em>, chargez un modèle et cliquez sur <em>Start Server</em></div>
+          </div>
+
+        </div>
+
+        <!-- Test Connection Button & Status -->
+        <div class="pt-3 border-t border-white/10">
+          <div class="flex items-center justify-between gap-3">
+            <button type="button" id="testConnBtn" class="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-xs font-semibold text-slate-200 border border-white/10 hover:border-indigo-500/40 transition flex items-center gap-1.5 shadow-sm">
+              <span>🔌</span> Tester la connexion
+            </button>
+            <span id="testConnStatus" class="text-xs text-slate-400 truncate max-w-[260px] font-mono"></span>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="px-6 py-4 border-t border-white/10 bg-slate-950/80 flex items-center justify-end gap-3">
+        <button type="button" id="cancelSettingsBtn" class="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white transition">
+          Annuler
+        </button>
+        <button type="button" id="saveSettingsBtn" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-xs font-bold text-white shadow-lg shadow-indigo-600/30 transition">
+          Enregistrer la configuration
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Notification Toast -->
+  <div id="toast" class="fixed bottom-6 right-6 px-4 py-3 rounded-2xl bg-slate-900/90 border border-white/15 text-xs font-semibold text-white shadow-2xl backdrop-blur-xl flex items-center gap-2.5 transform translate-y-20 opacity-0 transition-all pointer-events-none z-50">
+    <span id="toastIcon" class="text-base">🔔</span>
+    <span id="toastMessage">Action réalisée</span>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
