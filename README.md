@@ -90,17 +90,20 @@ Pour basculer en mode 100% souverain sans envoyer de données sur le cloud :
 ## 📁 Structure du Projet
 
 ```text
-demo/
-├── app.py              # Serveur backend (API REST, SQLite, client Gemini & On-Prem)
-├── start.sh            # Script de lancement en un clic
-├── config.json         # Configuration persistée (clés d'API, endpoints)
-├── dictaphone.db       # Base de données SQLite locale (créée automatiquement)
+VoXAI/
+├── app.py               # Serveur backend (API REST, SQLite, client Gemini & On-Prem)
+├── start.sh             # Script de lancement en un clic
+├── config.example.json  # Modèle de configuration (copié en config.json au 1er lancement)
+├── config.json          # Configuration locale (clés d'API) — non versionnée
+├── dictaphone.db        # Base SQLite locale (créée automatiquement) — non versionnée
 ├── static/
-│   ├── index.html      # Interface utilisateur moderne du Dictaphone
-│   ├── app.js          # Web Audio API, waveform, lecteur audio et logique réactive
-│   └── style.css       # Styles et animations
-└── recordings/         # Dossier de stockage des fichiers audio
+│   ├── index.html       # Interface utilisateur du Dictaphone
+│   ├── app.js           # Web Audio API, waveform, lecteur audio et logique réactive
+│   └── style.css        # Styles et animations
+└── recordings/          # Fichiers audio (créé automatiquement) — non versionné
 ```
+
+> 🔐 `config.json`, `dictaphone.db` et `recordings/` sont exclus du dépôt via `.gitignore` : ne commitez jamais vos clés d'API.
 
 ---
 

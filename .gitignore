@@ -1,0 +1,15 @@
+# Données locales / secrets
+config.json
+dictaphone.db
+recordings/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS / éditeurs
+.DS_Store
+.vscode/
+.idea/
