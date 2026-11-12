@@ -240,16 +240,21 @@
       "text": "Texte fidèlement retranscrit..."
     }
   ],
-  "summary": {
-    "executive": "Résumé exécutif ${multi ? 'consolidé de l\'ensemble des enregistrements ' : 'de la conversation '}en 3 à 5 phrases synthétiques.",
-    "key_points": ["Point clé 1 abordé avec détails", "Point clé 2..."],
-    "decisions": ["Décision 1 validée pendant l'échange", "Décision 2..."],
+  "summary": ${SUMMARY_SCHEMA(multi ? 'consolidé de l\'ensemble des enregistrements ' : 'de la conversation ')}
+}`;
+
+  const SUMMARY_SCHEMA = (scope = '') => `{
+    "executive": "Résumé exécutif ${scope}en 3 à 5 phrases synthétiques.",
+    "executive_refs": [1, 4],
+    "key_points": [{ "text": "Point clé 1 abordé avec détails", "refs": [2, 3] }],
+    "decisions": [{ "text": "Décision validée pendant l'échange", "refs": [5] }],
     "action_items": [
-      { "task": "Action concrète à réaliser", "assignee": "Personne concernée ou Non assigné", "deadline": "Échéance ou À définir", "status": "todo" }
+      { "task": "Action concrète à réaliser", "assignee": "Personne concernée ou Non assigné", "deadline": "Échéance ou À définir", "status": "todo", "refs": [6] }
     ],
     "tags": ["Tag1", "Tag2", "Tag3"]
-  }
-}`;
+  }`;
+
+  const REFS_RULE = `Les segments de la transcription sont numérotés à partir de 1 dans leur ordre d'apparition. Pour CHAQUE élément de la synthèse (résumé exécutif, point clé, décision, action), renseigne "refs" (ou "executive_refs") avec les numéros des segments qui justifient l'information (1 à 3 numéros, les plus pertinents). N'invente jamais un numéro qui n'existe pas.`;
 
   async function audioParts(audioFiles, label) {
     const parts = [];
@@ -285,7 +290,8 @@ ${ANALYSIS_SCHEMA(true, audioFiles[0].name)}
 Règles impératives :
 1. La transcription doit couvrir chaque fichier audio successivement et fidèlement.
 2. Le résumé, les décisions et le plan d'action doivent couvrir l'ensemble des ${audioFiles.length} enregistrements de façon consolidée.
-3. Réponds UNIQUEMENT avec le JSON pur.`
+3. ${REFS_RULE}
+4. Réponds UNIQUEMENT avec le JSON pur.`
       : `Tu es l'analyste IA d'un dictaphone intelligent.
 Analyse cet enregistrement audio de manière exhaustive.
 Tu dois répondre EXCLUSIVEMENT avec un objet JSON valide (sans backticks markdown, sans texte autour) respectant exactement cette structure:
@@ -296,7 +302,8 @@ Règles impératives :
 1. La transcription doit être fidèle mot pour mot avec horodatages réels et séparation des interlocuteurs si plusieurs voix parlent.
 2. S'il n'y a qu'un seul orateur (ex: mémo vocal / dictée), utilise "Moi" ou "Orateur".
 3. Les décisions et actions doivent être claires, concrètes et opérationnelles.
-4. Réponds UNIQUEMENT avec le JSON pur.`;
+4. ${REFS_RULE}
+5. Réponds UNIQUEMENT avec le JSON pur.`;
 
     const parts = [{ text: prompt }, ...(await audioParts(audioFiles, 'ENREGISTREMENT'))];
     const { text } = await geminiGenerate(cfg, {
@@ -335,8 +342,8 @@ Réponds EXCLUSIVEMENT avec un JSON pur respectant cette structure exacte :
   async function summarizeWithLocalLLM(transcription, audioFiles, cfg) {
     const { model } = localChatUrl(cfg);
     const multi = audioFiles.length > 1;
-    const transcript = transcription.map(it => {
-      const prefix = multi ? `[Piste ${it.file_index || 1} • ${it.timestamp || '00:00'}]` : `[${it.timestamp || '00:00'}]`;
+    const transcript = transcription.map((it, i) => {
+      const prefix = `#${i + 1} ` + (multi ? `[Piste ${it.file_index || 1} • ${it.timestamp || '00:00'}]` : `[${it.timestamp || '00:00'}]`);
       return `${prefix} ${it.speaker || 'Orateur'}: ${it.text || ''}`;
     }).join('\n');
     const filesDesc = audioFiles.map(a => `'${a.name}'`).join(', ');
@@ -352,14 +359,10 @@ Tu dois répondre EXCLUSIVEMENT avec un objet JSON valide (sans aucun commentair
 {
   "title": "Titre clair et représentatif de la session ou du sujet principal",
   "language": "fr",
-  "summary": {
-    "executive": "Résumé exécutif de l'échange ou de la note en 3 à 5 phrases synthétiques.",
-    "key_points": ["Point clé 1 important abordé avec détails", "Point clé 2..."],
-    "decisions": ["Décision validée pendant la discussion"],
-    "action_items": [{"task": "Action concrète à accomplir", "assignee": "Personne concernée ou Non assigné", "deadline": "Échéance ou À définir", "status": "todo"}],
-    "tags": ["Tag1", "Tag2", "Tag3"]
-  }
-}`;
+  "summary": ${SUMMARY_SCHEMA("de l'échange ou de la note ")}
+}
+
+Chaque ligne de la transcription commence par son numéro (#1, #2...). ${REFS_RULE}`;
 
     const fallbackTitle = audioFiles.length ? stripName(audioFiles[0].name) : 'Session analysée';
     try {
@@ -685,6 +688,24 @@ Réponds de manière précise, concise et serviable en te basant sur ce qui a é
         } catch (err) {
           return json(500, { error: `Erreur IA Chat: ${err.message}` });
         }
+      }
+
+      if (action === 'speakers' && method === 'POST') {
+        const { from = '', to = '' } = await req.json().catch(() => ({}));
+        const oldName = String(from).trim(), newName = String(to).trim();
+        if (!oldName || !newName) return json(400, { error: 'Nom d’orateur manquant' });
+        const rec = await store.get('recordings', recId);
+        if (!rec) return json(404, { error: 'Enregistrement non trouvé' });
+        const escaped = oldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const re = new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'gu');
+        const swap = v => typeof v === 'string' ? v.replace(re, newName)
+          : Array.isArray(v) ? v.map(swap)
+          : (v && typeof v === 'object') ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === 'refs' || k.endsWith('_refs') ? x : swap(x)]))
+          : v;
+        const transcription = (rec.transcription || []).map(seg =>
+          seg.speaker === oldName ? { ...seg, speaker: newName } : seg);
+        await store.put('recordings', { ...rec, transcription, summary: rec.summary ? swap(rec.summary) : rec.summary });
+        return json(200, { success: true });
       }
 
       if (method === 'DELETE') {

@@ -315,3 +315,47 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
 /* Utilities */
 .font-mono { font-family: var(--font-mono) !important; }
+
+/* Liens synthèse → transcription */
+.ref-chip {
+  display: inline-flex;
+  align-items: center;
+  margin: 0 2px;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 18px;
+  vertical-align: middle;
+  color: #a5b4fc;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.ref-chip:hover { background: rgba(99, 102, 241, 0.28); color: #e0e7ff; }
+
+.seg-highlight { animation: segFlash 2.4s ease-out; }
+@keyframes segFlash {
+  0%, 35% { background: rgba(99, 102, 241, 0.22); border-color: rgba(129, 140, 248, 0.8); }
+  100% { background: rgba(15, 23, 42, 0.4); }
+}
+
+/* Barre des orateurs (renommage) */
+.speaker-rename-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #cbd5e1;
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.speaker-rename-btn:hover { border-color: rgba(129, 140, 248, 0.5); color: #e0e7ff; }
+.speaker-rename-btn span[aria-hidden] { font-size: 9px; opacity: 0.7; }
