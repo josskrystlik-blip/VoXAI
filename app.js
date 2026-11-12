@@ -206,6 +206,7 @@ function openSettingsModal() {
   elements.onPremSttModel.value = state.config.on_prem_stt_model || 'whisper-1';
   elements.onPremSttApiKey.value = state.config.on_prem_stt_api_key || '';
   elements.localLlmApiKey.value = state.config.local_llm_api_key || '';
+  if (window.VoxConfluence) VoxConfluence.fillSettings(state.config);
 
   // Configurer sélection de modèle
   if (elements.localModelSelect) {
@@ -385,7 +386,8 @@ async function saveSettings() {
     on_prem_stt_url: elements.onPremSttUrl.value.trim(),
     on_prem_stt_model: elements.onPremSttModel.value.trim() || 'whisper-1',
     on_prem_stt_api_key: elements.onPremSttApiKey.value.trim(),
-    local_llm_api_key: elements.localLlmApiKey.value.trim()
+    local_llm_api_key: elements.localLlmApiKey.value.trim(),
+    ...(window.VoxConfluence ? VoxConfluence.readSettings() : {})
   };
 
   try {

@@ -2,5 +2,7 @@
 !index.html
 !app.js
 !db.js
+!confluence.js
+!docker/40-voxai-confluence.sh
 !style.css
 !docker/nginx.conf

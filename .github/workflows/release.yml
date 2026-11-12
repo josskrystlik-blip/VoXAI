@@ -66,7 +66,7 @@ jobs:
           mkdir -p dist "voxai-web-$V" "voxai-docker-$V"
 
           # 1. Site statique, à déposer sur n'importe quel hébergement web
-          cp index.html app.js db.js style.css LICENSE README.md "voxai-web-$V/"
+          cp index.html app.js db.js confluence.js style.css LICENSE README.md "voxai-web-$V/"
           zip -qr "dist/voxai-web-$V.zip" "voxai-web-$V"
 
           # 2. Image Docker hors-ligne (amd64) + compose prêt à l'emploi

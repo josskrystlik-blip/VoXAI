@@ -127,6 +127,26 @@ Si votre entreprise expose un modèle via une API compatible OpenAI (vLLM, LiteL
 
 Côté serveur, l'origine de VoxAI (adresse GitHub Pages ou du conteneur Docker) doit être autorisée en CORS.
 
+## 📘 Publication dans Confluence
+
+Chaque enregistrement analysé peut être publié en compte rendu dans Confluence (bouton **📘 Confluence**) :
+
+1. **⚙️ Paramètres → Publication Confluence** : URL de Confluence et **jeton d'accès personnel (PAT)** (*Profil → Jetons d'accès personnels* sur Confluence Server / Data Center). Pour Confluence Cloud, choisissez *E-mail + jeton d'API*.
+2. Dans la fenêtre de publication : choisissez l'**espace**, parcourez l'**arborescence** (ou recherchez une page par titre), puis
+   - **Créer une page** sous l'emplacement sélectionné, ou
+   - **Mettre à jour la page** sélectionnée (ajout à la fin ou remplacement du contenu).
+3. Le compte rendu contient le résumé, les décisions, le plan d'action (cases à cocher Confluence), les points clés et, en option, la transcription dans un bloc dépliable. Les tags deviennent des étiquettes.
+
+### CORS : utiliser le proxy du conteneur
+
+Confluence refuse en général les appels venant d'une autre origine (GitHub Pages, etc.). Avec l'image Docker, définissez `CONFLUENCE_URL` : le conteneur relaie alors `/confluence/` vers votre instance (même origine, aucune configuration côté Confluence, en-têtes `Origin` et cookies retirés, rien n'est journalisé).
+
+```bash
+docker run -d -p 8080:80 -e CONFLUENCE_URL=https://confluence.mon-entreprise.fr ghcr.io/josskrystlik-blip/voxai:latest
+```
+
+Sans proxy (GitHub Pages), l'administrateur Confluence doit autoriser l'origine de VoxAI en CORS.
+
 ## 📁 Structure du Projet
 
 ```text
@@ -134,9 +154,10 @@ VoXAI/
 ├── index.html   # Interface utilisateur du Dictaphone
 ├── app.js       # Web Audio API, waveform, lecteur audio et logique réactive
 ├── db.js        # « Backend » local : base IndexedDB + appels IA (Gemini / LLM local)
+├── confluence.js # Publication des comptes rendus dans Confluence (PAT)
 ├── style.css    # Styles et animations
 ├── start.sh     # Serveur statique pour un usage local
-├── Dockerfile   # Image Docker (nginx) + docker/nginx.conf
+├── Dockerfile   # Image Docker (nginx) + docker/ (config, proxy Confluence)
 ├── docker-compose.yml
 ├── .github/workflows/release.yml  # Release + image ghcr.io sur tag vX.Y.Z
 └── .nojekyll    # Publication telle quelle sur GitHub Pages
