@@ -734,6 +734,14 @@ Lorsqu'on te demande de rédiger un e-mail, réponds UNIQUEMENT avec l'e-mail : 
         }
       }
 
+      if (action === 'live' && method === 'POST') {
+        const { text = '' } = await req.json().catch(() => ({}));
+        const rec = await store.get('recordings', recId);
+        if (!rec) return json(404, { error: 'Enregistrement non trouvé' });
+        await store.put('recordings', { ...rec, live_transcript: String(text).slice(0, 500000) });
+        return json(200, { success: true });
+      }
+
       if (action === 'speakers' && method === 'POST') {
         const { from = '', to = '' } = await req.json().catch(() => ({}));
         const oldName = String(from).trim(), newName = String(to).trim();

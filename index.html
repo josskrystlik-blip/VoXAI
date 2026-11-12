@@ -100,7 +100,7 @@
     <main class="flex-1 flex flex-col overflow-hidden relative">
 
       <!-- ==================== SCREEN 1: ENREGISTREUR (DICTAPHONE) ==================== -->
-      <section id="recorderView" class="flex-1 flex flex-col items-center justify-center p-8 relative">
+      <section id="recorderView" class="flex-1 flex flex-col items-center justify-center p-8 relative overflow-y-auto">
         <div class="max-w-xl w-full flex flex-col items-center text-center space-y-6">
 
           <!-- Titre d'enregistrement optionnel -->
@@ -159,6 +159,20 @@
 
           <div id="recordStatusText" class="text-xs text-slate-400 font-medium">
             Prêt à enregistrer
+          </div>
+
+          <!-- Transcription en direct (brouillon) -->
+          <div class="w-full space-y-2">
+            <div class="flex items-center justify-center gap-2 flex-wrap">
+              <label id="liveToggleLabel" class="live-switch" title="Affiche le texte pendant que vous parlez (reconnaissance vocale du navigateur)">
+                <input type="checkbox" id="liveToggle">
+                <span class="live-switch-track"><span class="live-switch-thumb"></span></span>
+                <span class="text-xs font-semibold text-slate-300">Transcription en direct</span>
+              </label>
+              <span id="liveStatus" class="text-[10px] text-slate-500"></span>
+            </div>
+            <p class="text-[10px] text-slate-500 text-center leading-snug">Brouillon via la reconnaissance vocale du navigateur (Chrome / Edge) : l'audio est alors aussi envoyé à Google ou Microsoft.<br>L'analyse IA finale reste la transcription de référence.</p>
+            <div id="liveBox" class="hidden live-box"></div>
           </div>
         </div>
       </section>
@@ -735,6 +749,7 @@
 
   <script src="db.js"></script>
   <script src="app.js"></script>
+  <script src="live.js"></script>
   <script src="confluence.js"></script>
 </body>
 </html>
