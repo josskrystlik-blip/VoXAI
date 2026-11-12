@@ -468,7 +468,9 @@ ${transcriptStr}
 === SYNTHÈSE DE L'ENREGISTREMENT ===
 ${summaryStr}
 
-Réponds de manière précise, concise et serviable en te basant sur ce qui a été dit. Si l'information ne figure pas dans l'enregistrement, mentionne-le poliment.`;
+Réponds de manière précise, concise et serviable en te basant sur ce qui a été dit. Si l'information ne figure pas dans l'enregistrement, mentionne-le poliment.
+
+Lorsqu'on te demande de rédiger un e-mail, réponds UNIQUEMENT avec l'e-mail : une première ligne « Objet : … », une ligne vide, puis le corps du message (formule d'appel, contenu, formule de politesse), sans commentaire avant ni après.`;
 
     if (cfg.provider === 'gemini') {
       const contents = [

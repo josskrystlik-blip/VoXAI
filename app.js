@@ -1117,9 +1117,127 @@ function appendChatMessage(role, content) {
       ? 'ml-auto bg-indigo-600 text-white shadow' 
       : 'mr-auto bg-slate-800/70 text-slate-200 border border-slate-700/60'
   }`;
-  div.innerHTML = escapeHtml(content).replace(/\n/g, '<br>');
+  if (isUser) {
+    div.innerHTML = escapeHtml(content).replace(/\n/g, '<br>');
+  } else {
+    // Markdown simple (gras, listes) ; le texte est échappé avant mise en forme
+    div.innerHTML = `<div class="chat-md">${markdownToHtml(content)}</div>`;
+    div.appendChild(buildChatActions(content));
+  }
   elements.chatMessages.appendChild(div);
   elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+}
+
+// ==============================================================================
+// Copie des réponses de l'assistant (et e-mails prêts à envoyer)
+// ==============================================================================
+
+/** Repère un e-mail rédigé par l'IA : ligne « Objet : … » (ou « Subject: … ») suivie du corps. */
+function parseEmail(content) {
+  const lines = String(content).replace(/\r/g, '').split('\n');
+  const idx = lines.findIndex((l, i) => i < 6 && /^\s*[*_#>\s]*(objet|subject)\s*[*_]*\s*:/i.test(l));
+  if (idx === -1) return null;
+  const subject = stripMarkdown(lines[idx].replace(/^\s*[*_#>\s]*(objet|subject)\s*[*_]*\s*:\s*[*_]*\s*/i, '')).replace(/[*_]+\s*$/, '').trim();
+  const body = lines.slice(idx + 1).join('\n').replace(/^\s*(-{3,}|\*{3,})\s*$/m, '').trim();
+  return subject && body ? { subject, body } : null;
+}
+
+/** Texte brut sans syntaxe Markdown (gras, titres, code), listes conservées. */
+function stripMarkdown(text) {
+  return String(text)
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/(^|[^*])\*(?!\s)([^*\n]+?)\*(?!\*)/g, '$1$2')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/^(\s*)[*+]\s+/gm, '$1- ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/** Version HTML simple (gras, listes, paragraphes) pour un collage mis en forme dans Outlook / Gmail. */
+function markdownToHtml(text) {
+  const inline = s => escapeHtml(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/__(.+?)__/g, '<strong>$1</strong>');
+  const out = [];
+  let list = null;
+  let para = [];
+  const flushPara = () => { if (para.length) out.push(`<p>${para.join('<br>')}</p>`); para = []; };
+  const closeList = () => { if (list) out.push(`</${list}>`); list = null; };
+  for (const raw of String(text).split('\n')) {
+    const item = raw.match(/^\s*(?:[-*+•]|\d+[.)])\s+(.*)$/);
+    if (item) {
+      flushPara();
+      const tag = /^\s*\d/.test(raw) ? 'ol' : 'ul';
+      if (list !== tag) { closeList(); out.push(`<${tag}>`); list = tag; }
+      out.push(`<li>${inline(item[1])}</li>`);
+      continue;
+    }
+    closeList();
+    const heading = raw.match(/^\s{0,3}#{1,6}\s+(.*)$/);
+    if (heading) { flushPara(); out.push(`<p><strong>${inline(heading[1])}</strong></p>`); }
+    else if (raw.trim()) para.push(inline(raw));
+    else flushPara();
+  }
+  flushPara();
+  closeList();
+  return out.join('');
+}
+
+async function copyRich(markdown, label) {
+  const plain = stripMarkdown(markdown);
+  try {
+    if (window.ClipboardItem && navigator.clipboard.write) {
+      await navigator.clipboard.write([new ClipboardItem({
+        'text/plain': new Blob([plain], { type: 'text/plain' }),
+        'text/html': new Blob([markdownToHtml(markdown)], { type: 'text/html' })
+      })]);
+    } else {
+      await navigator.clipboard.writeText(plain);
+    }
+    showToast(`${label} copié !`, '📋');
+  } catch (err) {
+    showToast('Copie impossible : ' + err.message, '⚠️');
+  }
+}
+
+/** Lien mailto ; les liens trop longs étant tronqués par certaines messageries, le corps est alors omis. */
+function mailtoUrl(email) {
+  const subject = encodeURIComponent(email.subject);
+  const body = encodeURIComponent(stripMarkdown(email.body));
+  const fits = subject.length + body.length <= 1800;
+  return { url: fits ? `mailto:?subject=${subject}&body=${body}` : `mailto:?subject=${subject}`, bodyIncluded: fits };
+}
+
+function openInMailClient(email) {
+  const { url, bodyIncluded } = mailtoUrl(email);
+  if (!bodyIncluded) {
+    copyRich(email.body, 'Corps de l’e-mail').then(() =>
+      showToast('E-mail long : le corps est copié, collez-le dans le message (Ctrl+V)', '✉️'));
+  }
+  window.location.href = url;
+}
+
+function buildChatActions(content) {
+  const bar = document.createElement('div');
+  bar.className = 'chat-actions';
+  const email = parseEmail(content);
+  const add = (label, title, onClick) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chat-action-btn';
+    b.textContent = label;
+    b.title = title;
+    b.addEventListener('click', onClick);
+    bar.appendChild(b);
+  };
+  if (email) {
+    add('📋 Copier l’e-mail', 'Copie le corps du message, prêt à coller (mise en forme conservée)', () => copyRich(email.body, 'E-mail'));
+    add('🏷️ Copier l’objet', email.subject, () => navigator.clipboard.writeText(email.subject).then(() => showToast('Objet copié !', '📋')));
+    add('✉️ Ouvrir dans ma messagerie', 'Crée un nouveau message avec l’objet et le corps pré-remplis', () => openInMailClient(email));
+  } else {
+    add('📋 Copier', 'Copier la réponse', () => copyRich(content, 'Réponse'));
+  }
+  return bar;
 }
 
 // ==============================================================================
