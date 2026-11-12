@@ -131,6 +131,9 @@ const elements = {
   detectModelsStatus: document.getElementById('detectModelsStatus'),
   whisperLocalConfigContainer: document.getElementById('whisperLocalConfigContainer'),
   onPremSttUrl: document.getElementById('onPremSttUrl'),
+  onPremSttModel: document.getElementById('onPremSttModel'),
+  onPremSttApiKey: document.getElementById('onPremSttApiKey'),
+  localLlmApiKey: document.getElementById('localLlmApiKey'),
   testConnBtn: document.getElementById('testConnBtn'),
   testConnStatus: document.getElementById('testConnStatus'),
   
@@ -200,6 +203,9 @@ function openSettingsModal() {
   elements.onPremLlmUrl.value = localUrl;
   elements.onPremLlmModel.value = localModel;
   elements.onPremSttUrl.value = state.config.on_prem_stt_url || 'http://localhost:8000/v1';
+  elements.onPremSttModel.value = state.config.on_prem_stt_model || 'whisper-1';
+  elements.onPremSttApiKey.value = state.config.on_prem_stt_api_key || '';
+  elements.localLlmApiKey.value = state.config.local_llm_api_key || '';
 
   // Configurer sélection de modèle
   if (elements.localModelSelect) {
@@ -278,7 +284,8 @@ async function detectLocalModels() {
   if (elements.detectLocalModelsBtn) elements.detectLocalModelsBtn.disabled = true;
 
   try {
-    const res = await fetch(`/api/local-models?url=${encodeURIComponent(url)}`);
+    const key = elements.localLlmApiKey.value.trim();
+    const res = await fetch(`/api/local-models?url=${encodeURIComponent(url)}&key=${encodeURIComponent(key)}`);
     const data = await res.json();
     if (elements.detectLocalModelsBtn) elements.detectLocalModelsBtn.disabled = false;
 
@@ -334,7 +341,10 @@ async function testConnection() {
     local_stt_mode: localSttMode,
     on_prem_llm_url: elements.onPremLlmUrl.value.trim(),
     on_prem_llm_model: elements.onPremLlmModel.value.trim(),
-    on_prem_stt_url: elements.onPremSttUrl.value.trim()
+    on_prem_stt_url: elements.onPremSttUrl.value.trim(),
+    on_prem_stt_model: elements.onPremSttModel.value.trim() || 'whisper-1',
+    on_prem_stt_api_key: elements.onPremSttApiKey.value.trim(),
+    local_llm_api_key: elements.localLlmApiKey.value.trim()
   };
 
   try {
@@ -372,7 +382,10 @@ async function saveSettings() {
     local_stt_mode: localSttMode,
     on_prem_llm_url: localLlmUrl,
     on_prem_llm_model: localLlmModel,
-    on_prem_stt_url: elements.onPremSttUrl.value.trim()
+    on_prem_stt_url: elements.onPremSttUrl.value.trim(),
+    on_prem_stt_model: elements.onPremSttModel.value.trim() || 'whisper-1',
+    on_prem_stt_api_key: elements.onPremSttApiKey.value.trim(),
+    local_llm_api_key: elements.localLlmApiKey.value.trim()
   };
 
   try {
@@ -1502,6 +1515,14 @@ function setupEventListeners() {
       if (url) elements.onPremLlmUrl.value = url;
       if (model && model !== 'default' && model !== 'local-model') {
         elements.onPremLlmModel.value = model;
+        if (elements.localModelSelect && [...elements.localModelSelect.options].some(o => o.value === model)) {
+          elements.localModelSelect.value = model;
+        }
+      }
+      if (btn.dataset.preset === 'enterprise') {
+        elements.onPremLlmUrl.focus();
+        elements.onPremLlmUrl.select();
+        showToast("Renseignez l'URL du serveur IA de l'entreprise et votre clé d'API", '🏢');
       }
       if (url) detectLocalModels();
     });

@@ -493,6 +493,9 @@
               <button type="button" class="preset-btn px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-white/10 hover:border-purple-500/40 text-xs text-slate-200 transition font-medium flex items-center gap-1.5" data-preset="vllm" data-url="http://localhost:8000/v1" data-model="default">
                 <span>⚡</span> vLLM
               </button>
+              <button type="button" class="preset-btn px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-white/10 hover:border-purple-500/40 text-xs text-slate-200 transition font-medium flex items-center gap-1.5" data-preset="enterprise" data-model="gpt-oss-120b" title="Serveur IA de l'entreprise (ex. celui utilisé par LibreChat) : renseignez son URL et votre clé d'API">
+                <span>🏢</span> Entreprise (gpt-oss-120b)
+              </button>
               <button type="button" class="preset-btn px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-white/10 hover:border-purple-500/40 text-xs text-slate-200 transition font-medium flex items-center gap-1.5" data-preset="custom">
                 <span>⚙️</span> Autre / Custom
               </button>
@@ -513,6 +516,13 @@
             <div id="detectModelsStatus" class="text-[11px] text-slate-400 mt-1 min-h-[16px]"></div>
           </div>
 
+          <!-- Clé d'API du serveur LLM (serveurs d'entreprise : vLLM, LiteLLM, Azure...) -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-300 mb-1.5">Clé d'API du serveur LLM <span class="font-normal text-slate-500">(facultatif)</span></label>
+            <input type="password" id="localLlmApiKey" autocomplete="off" placeholder="sk-... — laisser vide pour Ollama / LM Studio en local" class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-purple-500">
+            <span class="text-[11px] text-slate-500 block mt-1">Envoyée en <code>Authorization: Bearer</code>. Conservée uniquement dans ce navigateur.</span>
+          </div>
+
           <!-- Sélection du modèle local -->
           <div>
             <label class="block text-xs font-semibold text-slate-300 mb-1.5">Modèle LLM local</label>
@@ -522,6 +532,8 @@
                 <option value="mistral">mistral</option>
                 <option value="qwen2.5:7b">qwen2.5:7b</option>
                 <option value="deepseek-r1:8b">deepseek-r1:8b</option>
+                <option value="gpt-oss-120b">gpt-oss-120b</option>
+                <option value="gpt-oss:20b">gpt-oss:20b (Ollama)</option>
                 <option value="__custom__">✏️ Saisir manuellement un autre nom...</option>
               </select>
               <input type="text" id="onPremLlmModel" value="llama3.2" placeholder="Nom exact du modèle (ex: llama3.2, mistral, qwen2.5:14b...)" class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-purple-500">
@@ -554,7 +566,17 @@
           <div id="whisperLocalConfigContainer" class="hidden space-y-1.5 pt-1">
             <label class="block text-xs font-semibold text-slate-300">URL du serveur Whisper local (STT)</label>
             <input type="text" id="onPremSttUrl" value="http://localhost:8000/v1" class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-purple-500">
-            <span class="text-[11px] text-slate-500 block">Serveur compatible OpenAI audio transcription (ex: faster-whisper-server ou whisper.cpp).</span>
+            <span class="text-[11px] text-slate-500 block">Serveur compatible OpenAI audio transcription (ex: faster-whisper-server, whisper.cpp, LiteLLM).</span>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-400 mb-1">Modèle de transcription</label>
+                <input type="text" id="onPremSttModel" placeholder="whisper-1" class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-purple-500">
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-400 mb-1">Clé d'API Whisper <span class="font-normal text-slate-500">(facultatif)</span></label>
+                <input type="password" id="onPremSttApiKey" autocomplete="off" placeholder="Vide = même clé que le LLM" class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-purple-500">
+              </div>
+            </div>
           </div>
 
           <!-- Guide rapide -->
