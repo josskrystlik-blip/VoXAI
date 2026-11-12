@@ -9,7 +9,7 @@ LABEL org.opencontainers.image.title="VoxAI" \
 
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 COPY docker/40-voxai-confluence.sh /docker-entrypoint.d/40-voxai-confluence.sh
-COPY index.html app.js db.js confluence.js style.css /usr/share/nginx/html/
+COPY index.html app.js db.js confluence.js live.js style.css /usr/share/nginx/html/
 
 # Facultatif : URL de Confluence à relayer sur /confluence/ (évite les blocages CORS)
 ENV CONFLUENCE_URL=""

@@ -473,6 +473,7 @@ async function startRecording() {
 
     state.mediaRecorder.onstop = handleRecordingStopped;
 
+    state.recordCancelled = false;
     state.mediaRecorder.start(250); // morceaux de 250ms
     state.isRecording = true;
     state.isPaused = false;
@@ -499,6 +500,9 @@ async function startRecording() {
 
     // Start Waveform render loop
     visualizeWaveform();
+
+    // Transcription en direct (brouillon) si activée
+    if (window.VoxLive) VoxLive.start();
 
   } catch (err) {
     console.error('Erreur accès micro:', err);
@@ -551,6 +555,7 @@ function pauseRecording() {
   if (!state.isPaused) {
     state.mediaRecorder.pause();
     state.isPaused = true;
+    if (window.VoxLive) VoxLive.pause();
     elements.recordStatusText.textContent = 'Enregistrement en pause';
     elements.recordingDot.classList.add('hidden');
     elements.pauseRecordBtn.innerHTML = `
@@ -561,6 +566,7 @@ function pauseRecording() {
   } else {
     state.mediaRecorder.resume();
     state.isPaused = false;
+    if (window.VoxLive) VoxLive.resume();
     elements.recordStatusText.textContent = 'Enregistrement en cours...';
     elements.recordingDot.classList.remove('hidden');
     elements.pauseRecordBtn.innerHTML = `
@@ -574,6 +580,8 @@ function pauseRecording() {
 function cancelRecording() {
   if (!state.isRecording) return;
   state.audioChunks = [];
+  state.recordCancelled = true; // l'arrêt des pistes déclenche encore onstop / un dernier morceau audio
+  if (window.VoxLive) VoxLive.cancel();
   cleanUpRecordingStreams();
   resetRecorderUI();
   showToast('Enregistrement annulé', '❌');
@@ -581,6 +589,7 @@ function cancelRecording() {
 
 function stopRecording() {
   if (!state.mediaRecorder || !state.isRecording) return;
+  state.liveText = window.VoxLive ? VoxLive.stop() : '';
   state.mediaRecorder.stop();
   cleanUpRecordingStreams();
 }
@@ -612,6 +621,11 @@ function resetRecorderUI() {
 }
 
 async function handleRecordingStopped() {
+  if (state.recordCancelled) {
+    state.recordCancelled = false;
+    state.audioChunks = [];
+    return;
+  }
   if (state.audioChunks.length === 0) {
     resetRecorderUI();
     return;
@@ -622,13 +636,16 @@ async function handleRecordingStopped() {
   const duration = state.recordElapsedSec;
   const customTitle = elements.recordTitleInput.value.trim() || 'Conversation du ' + new Date().toLocaleDateString('fr-FR');
 
+  const liveText = state.liveText || '';
+  state.liveText = '';
   resetRecorderUI();
+  if (window.VoxLive) VoxLive.reset();
   elements.recordTitleInput.value = '';
 
-  await uploadAndProcessAudio(audioBlob, customTitle, duration, mimeType);
+  await uploadAndProcessAudio(audioBlob, customTitle, duration, mimeType, liveText);
 }
 
-async function uploadAndProcessAudio(blob, title, duration, mimeType) {
+async function uploadAndProcessAudio(blob, title, duration, mimeType, liveText = '') {
   showToast('Enregistrement de l’audio en local...', '⏳');
 
   try {
@@ -643,6 +660,13 @@ async function uploadAndProcessAudio(blob, title, duration, mimeType) {
     });
 
     const recordData = await uploadRes.json();
+    if (liveText) {
+      await fetch(`/api/recordings/${recordData.id}/live`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: liveText })
+      });
+    }
     await loadRecordings();
     
     // Basculer directement sur cet enregistrement
@@ -1038,7 +1062,14 @@ function renderTranscriptTab(transcription) {
   renderSpeakersBar(transcription);
 
   if (!transcription || !Array.isArray(transcription) || transcription.length === 0) {
-    container.innerHTML = `
+    const draft = state.activeRecording && state.activeRecording.live_transcript;
+    container.innerHTML = draft ? `
+      <div class="p-4 rounded-xl bg-amber-500/5 border border-amber-500/20 text-xs text-slate-300 space-y-2">
+        <div class="font-semibold text-amber-300">📝 Brouillon de la transcription en direct</div>
+        <div class="text-[11px] text-slate-400">La transcription définitive (orateurs, horodatages précis) apparaîtra ici après l'analyse IA.</div>
+        <div class="whitespace-pre-wrap leading-relaxed font-mono text-[11px] text-slate-200">${escapeHtml(draft)}</div>
+      </div>
+    ` : `
       <div class="p-8 text-center text-xs text-slate-500">
         Aucune transcription disponible pour cet enregistrement.
       </div>
@@ -1217,6 +1248,15 @@ function outlookWebUrl(email) {
   return { url, bodyIncluded: fits };
 }
 
+/** Fenêtre de rédaction Gmail (compte Google connecté dans le navigateur). */
+function gmailUrl(email) {
+  const subject = encodeURIComponent(email.subject);
+  const body = encodeURIComponent(stripMarkdown(email.body));
+  const fits = subject.length + body.length <= 7000;
+  const url = `https://mail.google.com/mail/?view=cm&fs=1&su=${subject}${fits ? `&body=${body}` : ''}`;
+  return { url, bodyIncluded: fits };
+}
+
 function base64Utf8(str) {
   const bytes = new TextEncoder().encode(str);
   let bin = '';
@@ -1272,6 +1312,7 @@ function downloadEml(email) {
 const MAIL_TARGETS = {
   desktop: { label: 'Outlook (application)', hint: 'Fichier brouillon .eml : mise en forme conservée, sans limite de longueur' },
   web: { label: 'Outlook Web (Microsoft 365)', hint: 'Ouvre un nouveau message dans Outlook sur le web' },
+  gmail: { label: 'Gmail', hint: 'Ouvre un nouveau message dans Gmail (texte simple)' },
   mailto: { label: 'Messagerie par défaut', hint: 'Lien mailto vers la messagerie configurée sur l’ordinateur (texte simple)' }
 };
 
@@ -1286,12 +1327,12 @@ function setMailTarget(target) {
 
 function openInMailClient(email, target = getMailTarget()) {
   if (target === 'desktop') return downloadEml(email);
-  const { url, bodyIncluded } = target === 'web' ? outlookWebUrl(email) : mailtoUrl(email);
+  const { url, bodyIncluded } = target === 'web' ? outlookWebUrl(email) : target === 'gmail' ? gmailUrl(email) : mailtoUrl(email);
   if (!bodyIncluded) {
     copyRich(email.body, 'Corps de l’e-mail').then(() =>
       showToast('E-mail long : le corps est copié, collez-le dans le message (Ctrl+V)', '✉️'));
   }
-  if (target === 'web') window.open(url, '_blank', 'noopener');
+  if (target === 'web' || target === 'gmail') window.open(url, '_blank', 'noopener');
   else window.location.href = url;
 }
 

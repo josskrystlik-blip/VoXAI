@@ -147,6 +147,11 @@ docker run -d -p 8080:80 -e CONFLUENCE_URL=https://confluence.mon-entreprise.fr 
 
 Sans proxy (GitHub Pages), l'administrateur Confluence doit autoriser l'origine de VoxAI en CORS.
 
+## 🎙️ Transcription en direct & e-mail de compte rendu
+
+- **Transcription en direct** (interrupteur sous le bouton d'enregistrement) : le texte s'affiche pendant que vous parlez, via la reconnaissance vocale du navigateur (Chrome / Edge). ⚠️ L'audio est alors aussi envoyé à Google ou Microsoft ; la fonction est désactivée par défaut. Ce brouillon est conservé avec l'enregistrement ; l'analyse IA reste la transcription de référence.
+- **Assistant IA** : boutons de copie sous chaque réponse ; pour un e-mail, **Créer le mail** dans Outlook (brouillon `.eml` prêt à envoyer), Outlook Web, Gmail ou la messagerie par défaut.
+
 ## 📁 Structure du Projet
 
 ```text
@@ -155,6 +160,7 @@ VoXAI/
 ├── app.js       # Web Audio API, waveform, lecteur audio et logique réactive
 ├── db.js        # « Backend » local : base IndexedDB + appels IA (Gemini / LLM local)
 ├── confluence.js # Publication des comptes rendus dans Confluence (PAT)
+├── live.js      # Transcription en direct (reconnaissance vocale du navigateur)
 ├── style.css    # Styles et animations
 ├── start.sh     # Serveur statique pour un usage local
 ├── Dockerfile   # Image Docker (nginx) + docker/ (config, proxy Confluence)
