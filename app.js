@@ -103,6 +103,8 @@ const elements = {
   // Transcript Fields
   transcriptTimeline: document.getElementById('transcriptTimeline'),
   copyTranscriptBtn: document.getElementById('copyTranscriptBtn'),
+  copySummaryBtn: document.getElementById('copySummaryBtn'),
+  speakersBar: document.getElementById('speakersBar'),
   
   // Chat Fields
   chatMessages: document.getElementById('chatMessages'),
@@ -878,7 +880,9 @@ function renderSummaryTab(summary) {
   }
 
   // Résumé
-  elements.summaryExecutive.textContent = summary.executive || "Aucun résumé disponible.";
+  elements.summaryExecutive.innerHTML = summary.executive
+    ? escapeHtml(summary.executive) + refChips(summary.executive_refs)
+    : "Aucun résumé disponible.";
 
   // Décisions
   const decisions = summary.decisions || [];
@@ -886,7 +890,7 @@ function renderSummaryTab(summary) {
     elements.summaryDecisions.innerHTML = decisions.map(d => `
       <li class="flex items-start gap-2 bg-slate-800/40 p-2 rounded-lg border border-slate-700/40">
         <span class="text-emerald-400 font-bold shrink-0">✓</span>
-        <span>${escapeHtml(d)}</span>
+        <span>${escapeHtml(itemText(d))}${refChips(itemRefs(d))}</span>
       </li>
     `).join('');
   } else {
@@ -900,7 +904,7 @@ function renderSummaryTab(summary) {
       <label class="flex items-start gap-2.5 bg-slate-800/40 p-2 rounded-lg border border-slate-700/40 cursor-pointer hover:bg-slate-800/70 transition">
         <input type="checkbox" class="action-check mt-0.5 accent-indigo-500 rounded">
         <div class="flex-1">
-          <span class="text-slate-200 block">${escapeHtml(a.task)}</span>
+          <span class="text-slate-200 block">${escapeHtml(a.task)}${refChips(a.refs)}</span>
           <div class="flex items-center gap-2 mt-1 text-[10px] text-slate-400">
             <span class="px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">👤 ${escapeHtml(a.assignee || 'Tous')}</span>
             ${a.deadline ? `<span class="px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">📅 ${escapeHtml(a.deadline)}</span>` : ''}
@@ -914,7 +918,7 @@ function renderSummaryTab(summary) {
 
   // Points clés
   const keyPoints = summary.key_points || [];
-  elements.summaryKeyPoints.innerHTML = keyPoints.map(kp => `<li>${escapeHtml(kp)}</li>`).join('');
+  elements.summaryKeyPoints.innerHTML = keyPoints.map(kp => `<li>${escapeHtml(itemText(kp))}${refChips(itemRefs(kp))}</li>`).join('');
 
   // Tags
   const tags = summary.tags || [];
@@ -923,9 +927,100 @@ function renderSummaryTab(summary) {
   `).join('');
 }
 
+// Un élément de synthèse est soit une chaîne (anciennes analyses), soit { text, refs }
+function itemText(item) {
+  return (item && typeof item === 'object') ? (item.text || '') : String(item ?? '');
+}
+
+function itemRefs(item) {
+  return (item && typeof item === 'object' && Array.isArray(item.refs)) ? item.refs : [];
+}
+
+/** Pastilles cliquables renvoyant vers les segments (numérotés à partir de 1) de la transcription. */
+function refChips(refs) {
+  const transcription = (state.activeRecording && state.activeRecording.transcription) || [];
+  const isMulti = state.activeRecording && state.activeRecording.files && state.activeRecording.files.length > 1;
+  const valid = [...new Set((refs || []).map(n => parseInt(n, 10)))]
+    .filter(n => n >= 1 && n <= transcription.length)
+    .sort((a, b) => a - b);
+  if (!valid.length) return '';
+  return ' ' + valid.map(n => {
+    const seg = transcription[n - 1];
+    const label = (isMulti ? `P${seg.file_index || 1} · ` : '') + (seg.timestamp || '00:00');
+    const tip = `${seg.speaker || 'Orateur'} : ${(seg.text || '').slice(0, 140)}`;
+    return `<button type="button" class="ref-chip" data-seg="${n - 1}" title="${escapeHtml(tip)}">↪ ${escapeHtml(label)}</button>`;
+  }).join('');
+}
+
+/** Ouvre la transcription sur un segment, le met en évidence et positionne l'audio. */
+function goToSegment(idx) {
+  const rec = state.activeRecording;
+  const seg = rec && rec.transcription && rec.transcription[idx];
+  if (!seg) return;
+  switchTab('transcript');
+  const el = document.getElementById(`seg-${idx}`);
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.remove('seg-highlight');
+    void el.offsetWidth; // relance l'animation
+    el.classList.add('seg-highlight');
+  }
+  const isMulti = rec.files && rec.files.length > 1;
+  const trackIdx = Math.max(0, (seg.file_index || 1) - 1);
+  if (isMulti && state.activeFileIndex !== trackIdx && rec.files[trackIdx]) selectAudioTrack(trackIdx);
+  const sec = parseTimestamp(seg.timestamp || '00:00');
+  const audio = elements.audioElement;
+  if (audio.readyState >= 1) audio.currentTime = sec;
+  else audio.addEventListener('loadedmetadata', () => { audio.currentTime = sec; }, { once: true });
+}
+
+async function renameSpeaker(oldName) {
+  const rec = state.activeRecording;
+  if (!rec || !oldName) return;
+  const newName = (prompt(`Nouveau nom pour « ${oldName} » :`, oldName) || '').trim();
+  if (!newName || newName === oldName) return;
+  const res = await fetch(`/api/recordings/${rec.id}/speakers`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ from: oldName, to: newName })
+  });
+  const data = await res.json();
+  if (!data.success) {
+    showToast('Erreur : ' + (data.error || 'renommage impossible'), '⚠️');
+    return;
+  }
+  // Rafraîchit uniquement les onglets, sans réinitialiser le lecteur audio
+  const fresh = await (await fetch(`/api/recordings/${rec.id}`)).json();
+  if (state.activeRecording !== rec) return;
+  rec.transcription = fresh.transcription;
+  rec.summary = fresh.summary;
+  renderSummaryTab(rec.summary);
+  renderTranscriptTab(rec.transcription);
+  showToast(`« ${oldName} » renommé en « ${newName} »`, '✏️');
+}
+
+function renderSpeakersBar(transcription) {
+  const bar = elements.speakersBar;
+  if (!bar) return;
+  const speakers = [...new Set((transcription || []).map(s => s.speaker).filter(Boolean))];
+  if (!speakers.length) {
+    bar.classList.add('hidden');
+    bar.innerHTML = '';
+    return;
+  }
+  bar.classList.remove('hidden');
+  bar.innerHTML = `<span class="text-[11px] text-slate-400 font-semibold mr-1">Orateurs :</span>` + speakers.map(name => `
+    <button type="button" class="speaker-rename-btn" data-speaker="${escapeHtml(name)}" title="Renommer cet orateur partout">
+      <span>${escapeHtml(name)}</span><span aria-hidden="true">✏️</span>
+    </button>`).join('');
+  bar.querySelectorAll('.speaker-rename-btn').forEach(btn =>
+    btn.addEventListener('click', () => renameSpeaker(btn.dataset.speaker)));
+}
+
 function renderTranscriptTab(transcription) {
   const container = elements.transcriptTimeline;
   container.innerHTML = '';
+  renderSpeakersBar(transcription);
 
   if (!transcription || !Array.isArray(transcription) || transcription.length === 0) {
     container.innerHTML = `
@@ -940,7 +1035,8 @@ function renderTranscriptTab(transcription) {
 
   transcription.forEach((seg, idx) => {
     const item = document.createElement('div');
-    item.className = 'flex items-start gap-4 p-3 rounded-xl bg-slate-900/40 border border-slate-800/60 hover:border-slate-700/80 transition';
+    item.id = `seg-${idx}`;
+    item.className = 'transcript-seg flex items-start gap-4 p-3 rounded-xl bg-slate-900/40 border border-slate-800/60 hover:border-slate-700/80 transition';
     
     const speakerName = escapeHtml(seg.speaker || `Orateur ${idx + 1}`);
     const timestamp = seg.timestamp || '00:00';
@@ -957,12 +1053,16 @@ function renderTranscriptTab(transcription) {
       </div>
       <div class="flex-1">
         <div class="flex items-center gap-2 mb-1">
-          <span class="text-xs font-semibold text-slate-300">${speakerName}</span>
+          <button type="button" class="speaker-name-btn text-xs font-semibold text-slate-300 hover:text-indigo-300 transition" title="Cliquer pour renommer cet orateur">${speakerName}</button>
           ${isMultiTrack ? `<span class="text-[10px] text-indigo-400/80 italic">• ${fileName}</span>` : ''}
         </div>
         <p class="text-xs text-slate-200 leading-relaxed">${text}</p>
       </div>
     `;
+
+    if (seg.speaker) {
+      item.querySelector('.speaker-name-btn').addEventListener('click', () => renameSpeaker(seg.speaker));
+    }
 
     // Click on timestamp jumps audio player (switching track if multi-track)
     const btn = item.querySelector('.timestamp-btn');
@@ -1163,10 +1263,7 @@ function switchTab(tabName) {
 // Exports & Actions
 // ==============================================================================
 
-function exportAsMarkdown() {
-  const rec = state.activeRecording;
-  if (!rec) return;
-
+function buildSummaryMarkdown(rec) {
   let md = `# ${rec.title}\n`;
   md += `*Date : ${rec.created_at} | Durée totale : ${formatDuration(rec.duration || 0)}*\n`;
   if (rec.files && rec.files.length > 1) {
@@ -1180,7 +1277,7 @@ function exportAsMarkdown() {
     
     if (s.decisions && s.decisions.length) {
       md += `## 🎯 Décisions Clés\n`;
-      s.decisions.forEach(d => md += `- ${d}\n`);
+      s.decisions.forEach(d => md += `- ${itemText(d)}\n`);
       md += `\n`;
     }
 
@@ -1192,10 +1289,33 @@ function exportAsMarkdown() {
 
     if (s.key_points && s.key_points.length) {
       md += `## 💡 Points Clés\n`;
-      s.key_points.forEach(k => md += `- ${k}\n`);
+      s.key_points.forEach(k => md += `- ${itemText(k)}\n`);
       md += `\n`;
     }
+
+    if (s.tags && s.tags.length) {
+      md += s.tags.map(t => `#${t}`).join(' ') + `\n\n`;
+    }
   }
+  return md;
+}
+
+function copySummaryOnly() {
+  const rec = state.activeRecording;
+  if (!rec || !rec.summary) {
+    showToast('Aucun résumé à copier pour cet enregistrement.', '⚠️');
+    return;
+  }
+  navigator.clipboard.writeText(buildSummaryMarkdown(rec).trim() + '\n').then(() => {
+    showToast('Résumé copié !', '📋');
+  });
+}
+
+function exportAsMarkdown() {
+  const rec = state.activeRecording;
+  if (!rec) return;
+
+  let md = buildSummaryMarkdown(rec);
 
   if (rec.transcription && rec.transcription.length) {
     md += `## 📝 Transcription Intégrale\n\n`;
@@ -1317,6 +1437,14 @@ function setupEventListeners() {
   });
   elements.exportMarkdownBtn.addEventListener('click', exportAsMarkdown);
   elements.copyTranscriptBtn.addEventListener('click', copyTranscriptOnly);
+  elements.copySummaryBtn.addEventListener('click', copySummaryOnly);
+  elements.tabContentSummary.addEventListener('click', (e) => {
+    const chip = e.target.closest('.ref-chip');
+    if (!chip) return;
+    e.preventDefault();
+    e.stopPropagation();
+    goToSegment(parseInt(chip.dataset.seg, 10));
+  });
   elements.deleteRecordBtn.addEventListener('click', deleteRecording);
 
   // Tabs
