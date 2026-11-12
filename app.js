@@ -612,7 +612,7 @@ async function handleRecordingStopped() {
 }
 
 async function uploadAndProcessAudio(blob, title, duration, mimeType) {
-  showToast('Envoi de l’audio vers le serveur...', '⏳');
+  showToast('Enregistrement de l’audio en local...', '⏳');
 
   try {
     const uploadRes = await fetch('/api/recordings/upload', {
@@ -760,7 +760,7 @@ function selectAudioTrack(index) {
   state.activeFileIndex = index;
   const file = rec.files[index];
 
-  elements.audioElement.src = `/audio/${file.filename}`;
+  VoxLocal.audioUrl(file.filename).then(u => { if (state.activeFileIndex === index) elements.audioElement.src = u; });
   elements.playerCurrentTime.textContent = '00:00';
   elements.playerTotalTime.textContent = formatDuration(file.duration || 0);
   elements.playerSeek.value = 0;
@@ -854,7 +854,7 @@ function renderRecordingDetails() {
 
   // Audio Player setup
   const initialFile = (files.length > 0) ? files[0].filename : rec.filename;
-  elements.audioElement.src = `/audio/${initialFile}`;
+  VoxLocal.audioUrl(initialFile).then(u => { if (state.activeRecording === rec) elements.audioElement.src = u; });
   elements.playerCurrentTime.textContent = '00:00';
   elements.playerTotalTime.textContent = formatDuration(rec.duration || 0);
   elements.playerSeek.value = 0;
@@ -1032,7 +1032,7 @@ async function triggerAIProcessing(recId) {
       await selectRecording(recId);
     }
   } catch (err) {
-    showToast('Erreur serveur IA: ' + err.message, '⚠️');
+    showToast('Erreur IA: ' + err.message, '⚠️');
     await selectRecording(recId);
   }
 }
