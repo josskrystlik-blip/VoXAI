@@ -24,6 +24,8 @@
     on_prem_llm_model: 'llama3.2',
     on_prem_stt_url: 'http://localhost:8000/v1',
     on_prem_stt_model: 'whisper-1',
+    on_prem_stt_api_key: '',
+    local_llm_api_key: '',
     language_hint: 'fr'
   };
 
@@ -217,16 +219,43 @@
     return { base: url, v1, chat: `${v1}/chat/completions`, model: cfg.local_llm_model || cfg.on_prem_llm_model || 'llama3.2' };
   }
 
-  async function localChat(cfg, messages, temperature, timeoutMs) {
+  function authHeaders(key) {
+    key = (key || '').trim();
+    return key ? { Authorization: `Bearer ${key}` } : {};
+  }
+
+  /**
+   * Appel /chat/completions d'un serveur compatible OpenAI (Ollama, vLLM, LiteLLM, gpt-oss...).
+   * jsonMode demande une réponse JSON (response_format) ; si le serveur refuse ce paramètre,
+   * la requête est relancée sans.
+   */
+  async function localChat(cfg, messages, temperature, timeoutMs, { jsonMode = false } = {}) {
     const { chat, model } = localChatUrl(cfg);
-    const res = await fetchWithTimeout(chat, {
+    const send = (extra) => fetchWithTimeout(chat, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, messages, temperature })
+      headers: { 'Content-Type': 'application/json', ...authHeaders(cfg.local_llm_api_key) },
+      body: JSON.stringify({ model, messages, temperature, ...extra })
     }, timeoutMs);
+    let res = await send(jsonMode ? { response_format: { type: 'json_object' } } : {});
+    if (jsonMode && (res.status === 400 || res.status === 422)) res = await send({});
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(`accès refusé par le serveur LLM (HTTP ${res.status}) : vérifiez la clé d'API`);
+    }
     if (!res.ok) throw new Error(`LLM local (HTTP ${res.status}): ${await res.text()}`);
     const data = await res.json();
-    return data.choices[0].message.content;
+    const msg = (data.choices && data.choices[0] && data.choices[0].message) || {};
+    const content = stripReasoning(msg.content || '');
+    if (!content) throw new Error('réponse vide du modèle (augmentez la limite de tokens du serveur ?)');
+    return content;
+  }
+
+  /** Retire un éventuel raisonnement visible (balises <think>, canaux « harmony » de gpt-oss). */
+  function stripReasoning(text) {
+    let t = String(text);
+    t = t.replace(/<think>[\s\S]*?<\/think>/gi, '');
+    const final = t.lastIndexOf('<|channel|>final<|message|>');
+    if (final !== -1) t = t.slice(final + '<|channel|>final<|message|>'.length);
+    return t.replace(/<\|(?:end|return|start|channel|message)\|>/g, '').trim();
   }
 
   const ANALYSIS_SCHEMA = (multi, firstName) => `{
@@ -369,7 +398,7 @@ Chaque ligne de la transcription commence par son numéro (#1, #2...). ${REFS_RU
       const content = await localChat(cfg, [
         { role: 'system', content: 'Tu es un analyste IA de réunions et notes vocales. Tu réponds UNIQUEMENT par un objet JSON pur et valide, sans markdown.' },
         { role: 'user', content: prompt }
-      ], 0.2, 180000);
+      ], 0.2, 300000, { jsonMode: true });
       const parsed = cleanJson(content);
       parsed.transcription = transcription;
       if (!parsed.title) parsed.title = fallbackTitle;
@@ -391,11 +420,13 @@ Chaque ligne de la transcription commence par son numéro (#1, #2...). ${REFS_RU
     }
   }
 
-  async function transcribeWhisperLocal(af, sttUrl, sttModel) {
+  async function transcribeWhisperLocal(af, sttUrl, sttModel, apiKey) {
     const form = new FormData();
     form.append('model', sttModel || 'whisper-1');
     form.append('file', af.blob, af.filename);
-    const res = await fetchWithTimeout(`${sttUrl}/audio/transcriptions`, { method: 'POST', body: form }, 90000);
+    const res = await fetchWithTimeout(`${sttUrl}/audio/transcriptions`, {
+      method: 'POST', body: form, headers: authHeaders(apiKey)
+    }, 300000);
     if (!res.ok) throw new Error(`Whisper local (HTTP ${res.status}): ${await res.text()}`);
     return (await res.json()).text || '';
   }
@@ -414,7 +445,8 @@ Chaque ligne de la transcription commence par son numéro (#1, #2...). ${REFS_RU
         file_name: audioFiles[i].name,
         speaker: `Orateur (Piste ${i + 1})`,
         timestamp: '00:00',
-        text: await transcribeWhisperLocal(audioFiles[i], sttUrl, cfg.on_prem_stt_model)
+        text: await transcribeWhisperLocal(audioFiles[i], sttUrl, cfg.on_prem_stt_model,
+          cfg.on_prem_stt_api_key || cfg.local_llm_api_key)
       });
     }
     return summarizeWithLocalLLM(transcription, audioFiles, cfg);
@@ -447,7 +479,7 @@ Réponds de manière précise, concise et serviable en te basant sur ce qui a é
       { role: 'system', content: system },
       ...history.map(h => ({ role: h.role, content: h.content })),
       { role: 'user', content: userMsg }
-    ], 0.3, 45000);
+    ], 0.3, 120000);
   }
 
   function corsHint(err) {
@@ -473,21 +505,22 @@ Réponds de manière précise, concise et serviable en te basant sur ce qui a é
     const { model, base } = localChatUrl(cfg);
     const t0 = performance.now();
     try {
-      await localChat(cfg, [{ role: 'user', content: 'ping' }], 0, 12000);
+      await localChat(cfg, [{ role: 'user', content: 'ping' }], 0, 30000);
       return { success: true, message: `Connexion au LLM local réussie (${model}) en ${Math.round(performance.now() - t0)} ms !` };
     } catch (err) {
       return { success: false, message: `Impossible de joindre le modèle local '${model}' sur ${base} : ${corsHint(err)}` };
     }
   }
 
-  async function detectLocalModels(url) {
+  async function detectLocalModels(url, apiKey) {
+    const headers = { Accept: 'application/json', ...authHeaders(apiKey) };
     const clean = (url || 'http://localhost:11434').trim().replace(/\/+$/, '');
     const root = clean.endsWith('/v1') ? clean.slice(0, -3) : clean;
     const v1 = clean.endsWith('/v1') ? clean : `${clean}/v1`;
     let lastErr = null;
 
     try {
-      const res = await fetchWithTimeout(`${root}/api/tags`, { headers: { Accept: 'application/json' } }, 3000);
+      const res = await fetchWithTimeout(`${root}/api/tags`, { headers }, 3000);
       if (res.ok) {
         const models = [...new Set(((await res.json()).models || []).map(m => m.name).filter(Boolean))].sort();
         if (models.length) return { success: true, models, type: 'ollama', server_url: v1 };
@@ -496,7 +529,10 @@ Réponds de manière précise, concise et serviable en te basant sur ce qui a é
 
     for (const endpoint of [`${v1}/models`, `${clean}/models`]) {
       try {
-        const res = await fetchWithTimeout(endpoint, { headers: { Accept: 'application/json' } }, 3000);
+        const res = await fetchWithTimeout(endpoint, { headers }, 5000);
+        if (res.status === 401 || res.status === 403) {
+          return { success: false, models: [], error: `Le serveur ${url} demande une clé d'API valide (HTTP ${res.status}).` };
+        }
         if (!res.ok) continue;
         const models = [...new Set(((await res.json()).data || []).map(m => m.id).filter(Boolean))].sort();
         if (models.length) {
@@ -562,7 +598,7 @@ Réponds de manière précise, concise et serviable en te basant sur ce qui a é
     }
 
     if (path === '/api/local-models') {
-      return json(200, await detectLocalModels(query.get('url') || 'http://localhost:11434/v1'));
+      return json(200, await detectLocalModels(query.get('url') || 'http://localhost:11434/v1', query.get('key') || ''));
     }
 
     if (path === '/api/test-connection') {

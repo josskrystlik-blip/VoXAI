@@ -116,6 +116,17 @@ La page appelle votre serveur local directement depuis le navigateur. Il faut do
 
 ---
 
+## 🏢 Serveur IA d'entreprise (ex. gpt-oss-120b derrière LibreChat)
+
+Si votre entreprise expose un modèle via une API compatible OpenAI (vLLM, LiteLLM, Azure OpenAI… souvent le même serveur que celui utilisé par LibreChat) :
+
+1. **⚙️ → 🔒 On-Premise** → préconfiguration **🏢 Entreprise (gpt-oss-120b)**.
+2. **URL** : l'adresse de l'API, par ex. `https://ia.mon-entreprise.fr/v1`, et **Clé d'API** : votre clé personnelle.
+3. **Détecter mes modèles** pour vérifier l'accès, puis choisir `gpt-oss-120b`.
+4. Transcription : **🔒 100 % Hors-Ligne** avec l'URL et le modèle Whisper du serveur (ex. `whisper-large-v3`) pour que l'audio ne quitte pas l'entreprise ; le mode **Hybride** envoie l'audio à Gemini.
+
+Côté serveur, l'origine de VoxAI (adresse GitHub Pages ou du conteneur Docker) doit être autorisée en CORS.
+
 ## 📁 Structure du Projet
 
 ```text
