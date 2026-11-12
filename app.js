@@ -1117,9 +1117,256 @@ function appendChatMessage(role, content) {
       ? 'ml-auto bg-indigo-600 text-white shadow' 
       : 'mr-auto bg-slate-800/70 text-slate-200 border border-slate-700/60'
   }`;
-  div.innerHTML = escapeHtml(content).replace(/\n/g, '<br>');
+  if (isUser) {
+    div.innerHTML = escapeHtml(content).replace(/\n/g, '<br>');
+  } else {
+    // Markdown simple (gras, listes) ; le texte est échappé avant mise en forme
+    div.innerHTML = `<div class="chat-md">${markdownToHtml(content)}</div>`;
+    div.appendChild(buildChatActions(content));
+  }
   elements.chatMessages.appendChild(div);
   elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+}
+
+// ==============================================================================
+// Copie des réponses de l'assistant (et e-mails prêts à envoyer)
+// ==============================================================================
+
+/** Repère un e-mail rédigé par l'IA : ligne « Objet : … » (ou « Subject: … ») suivie du corps. */
+function parseEmail(content) {
+  const lines = String(content).replace(/\r/g, '').split('\n');
+  const idx = lines.findIndex((l, i) => i < 6 && /^\s*[*_#>\s]*(objet|subject)\s*[*_]*\s*:/i.test(l));
+  if (idx === -1) return null;
+  const subject = stripMarkdown(lines[idx].replace(/^\s*[*_#>\s]*(objet|subject)\s*[*_]*\s*:\s*[*_]*\s*/i, '')).replace(/[*_]+\s*$/, '').trim();
+  const body = lines.slice(idx + 1).join('\n').replace(/^\s*(-{3,}|\*{3,})\s*$/m, '').trim();
+  return subject && body ? { subject, body } : null;
+}
+
+/** Texte brut sans syntaxe Markdown (gras, titres, code), listes conservées. */
+function stripMarkdown(text) {
+  return String(text)
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/__(.+?)__/g, '$1')
+    .replace(/(^|[^*])\*(?!\s)([^*\n]+?)\*(?!\*)/g, '$1$2')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/^(\s*)[*+]\s+/gm, '$1- ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/** Version HTML simple (gras, listes, paragraphes) pour un collage mis en forme dans Outlook / Gmail. */
+function markdownToHtml(text) {
+  const inline = s => escapeHtml(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/__(.+?)__/g, '<strong>$1</strong>');
+  const out = [];
+  let list = null;
+  let para = [];
+  const flushPara = () => { if (para.length) out.push(`<p>${para.join('<br>')}</p>`); para = []; };
+  const closeList = () => { if (list) out.push(`</${list}>`); list = null; };
+  for (const raw of String(text).split('\n')) {
+    const item = raw.match(/^\s*(?:[-*+•]|\d+[.)])\s+(.*)$/);
+    if (item) {
+      flushPara();
+      const tag = /^\s*\d/.test(raw) ? 'ol' : 'ul';
+      if (list !== tag) { closeList(); out.push(`<${tag}>`); list = tag; }
+      out.push(`<li>${inline(item[1])}</li>`);
+      continue;
+    }
+    closeList();
+    const heading = raw.match(/^\s{0,3}#{1,6}\s+(.*)$/);
+    if (heading) { flushPara(); out.push(`<p><strong>${inline(heading[1])}</strong></p>`); }
+    else if (raw.trim()) para.push(inline(raw));
+    else flushPara();
+  }
+  flushPara();
+  closeList();
+  return out.join('');
+}
+
+async function copyRich(markdown, label) {
+  const plain = stripMarkdown(markdown);
+  try {
+    if (window.ClipboardItem && navigator.clipboard.write) {
+      await navigator.clipboard.write([new ClipboardItem({
+        'text/plain': new Blob([plain], { type: 'text/plain' }),
+        'text/html': new Blob([markdownToHtml(markdown)], { type: 'text/html' })
+      })]);
+    } else {
+      await navigator.clipboard.writeText(plain);
+    }
+    showToast(`${label} copié !`, '📋');
+  } catch (err) {
+    showToast('Copie impossible : ' + err.message, '⚠️');
+  }
+}
+
+/** Lien mailto ; les liens trop longs étant tronqués par certaines messageries, le corps est alors omis. */
+function mailtoUrl(email) {
+  const subject = encodeURIComponent(email.subject);
+  const body = encodeURIComponent(stripMarkdown(email.body));
+  const fits = subject.length + body.length <= 1800;
+  return { url: fits ? `mailto:?subject=${subject}&body=${body}` : `mailto:?subject=${subject}`, bodyIncluded: fits };
+}
+
+/** Lien de rédaction Outlook sur le web (Microsoft 365). */
+function outlookWebUrl(email) {
+  const subject = encodeURIComponent(email.subject);
+  const body = encodeURIComponent(stripMarkdown(email.body));
+  const fits = subject.length + body.length <= 7000;
+  const url = `https://outlook.office.com/mail/deeplink/compose?subject=${subject}${fits ? `&body=${body}` : ''}`;
+  return { url, bodyIncluded: fits };
+}
+
+function base64Utf8(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin).replace(/.{76}(?=.)/g, '$&\r\n');
+}
+
+/**
+ * Brouillon .eml (en-tête X-Unsent) : Outlook (Windows / Mac) l'ouvre comme un nouveau
+ * message prêt à envoyer, avec la mise en forme et sans limite de longueur.
+ */
+function buildEml(email) {
+  const boundary = `voxai-${Date.now().toString(36)}`;
+  const html = `<html><head><meta charset="utf-8"></head><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt">${markdownToHtml(email.body)}</body></html>`;
+  return [
+    'X-Unsent: 1',
+    'To: ',
+    `Subject: =?UTF-8?B?${base64Utf8(email.subject).replace(/\r\n/g, '')}?=`,
+    'MIME-Version: 1.0',
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
+    'Content-Type: text/plain; charset=UTF-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+    base64Utf8(stripMarkdown(email.body)),
+    `--${boundary}`,
+    'Content-Type: text/html; charset=UTF-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+    base64Utf8(html),
+    `--${boundary}--`,
+    ''
+  ].join('\r\n');
+}
+
+function downloadEml(email) {
+  const blob = new Blob([buildEml(email)], { type: 'message/rfc822' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  // Nom de fichier en ASCII (accents et tirets typographiques mal gérés par certains navigateurs)
+  const safeName = email.subject.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u2010-\u2015]/g, '-').replace(/[^\x20-\x7e]/g, '')
+    .replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+  a.download = `${safeName || 'Compte rendu'}.eml`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  showToast('Brouillon téléchargé : ouvrez le fichier .eml, Outlook crée le message prêt à envoyer', '📨');
+}
+
+const MAIL_TARGETS = {
+  desktop: { label: 'Outlook (application)', hint: 'Fichier brouillon .eml : mise en forme conservée, sans limite de longueur' },
+  web: { label: 'Outlook Web (Microsoft 365)', hint: 'Ouvre un nouveau message dans Outlook sur le web' },
+  mailto: { label: 'Messagerie par défaut', hint: 'Lien mailto vers la messagerie configurée sur l’ordinateur (texte simple)' }
+};
+
+function getMailTarget() {
+  try { return MAIL_TARGETS[localStorage.getItem('voxai_mail_target')] ? localStorage.getItem('voxai_mail_target') : 'desktop'; }
+  catch { return 'desktop'; }
+}
+
+function setMailTarget(target) {
+  try { localStorage.setItem('voxai_mail_target', target); } catch { /* stockage indisponible */ }
+}
+
+function openInMailClient(email, target = getMailTarget()) {
+  if (target === 'desktop') return downloadEml(email);
+  const { url, bodyIncluded } = target === 'web' ? outlookWebUrl(email) : mailtoUrl(email);
+  if (!bodyIncluded) {
+    copyRich(email.body, 'Corps de l’e-mail').then(() =>
+      showToast('E-mail long : le corps est copié, collez-le dans le message (Ctrl+V)', '✉️'));
+  }
+  if (target === 'web') window.open(url, '_blank', 'noopener');
+  else window.location.href = url;
+}
+
+/** Bouton « Créer le mail » + menu pour choisir la messagerie (choix mémorisé). */
+function buildMailButton(email) {
+  const wrap = document.createElement('span');
+  wrap.className = 'mail-split';
+  const main = document.createElement('button');
+  main.type = 'button';
+  main.className = 'chat-action-btn mail-main';
+  const refresh = () => {
+    const t = getMailTarget();
+    main.textContent = `✉️ Créer le mail · ${MAIL_TARGETS[t].label}`;
+    main.title = MAIL_TARGETS[t].hint;
+  };
+  refresh();
+  main.addEventListener('click', () => openInMailClient(email));
+
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'chat-action-btn mail-toggle';
+  toggle.textContent = '▾';
+  toggle.title = 'Choisir la messagerie';
+  toggle.setAttribute('aria-haspopup', 'menu');
+
+  const menu = document.createElement('div');
+  menu.className = 'mail-menu hidden';
+  menu.setAttribute('role', 'menu');
+  Object.entries(MAIL_TARGETS).forEach(([key, t]) => {
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.setAttribute('role', 'menuitem');
+    item.dataset.target = key;
+    item.innerHTML = `<strong>${escapeHtml(t.label)}</strong><span>${escapeHtml(t.hint)}</span>`;
+    item.addEventListener('click', () => {
+      setMailTarget(key);
+      menu.classList.add('hidden');
+      document.querySelectorAll('.mail-split').forEach(w => w._refresh && w._refresh());
+      openInMailClient(email, key);
+    });
+    menu.appendChild(item);
+  });
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    document.querySelectorAll('.mail-menu').forEach(m => m !== menu && m.classList.add('hidden'));
+    menu.classList.toggle('hidden');
+  });
+  document.addEventListener('click', (e) => { if (!wrap.contains(e.target)) menu.classList.add('hidden'); });
+
+  wrap._refresh = refresh;
+  wrap.append(main, toggle, menu);
+  return wrap;
+}
+
+function buildChatActions(content) {
+  const bar = document.createElement('div');
+  bar.className = 'chat-actions';
+  const email = parseEmail(content);
+  const add = (label, title, onClick) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chat-action-btn';
+    b.textContent = label;
+    b.title = title;
+    b.addEventListener('click', onClick);
+    bar.appendChild(b);
+  };
+  if (email) {
+    add('📋 Copier l’e-mail', 'Copie le corps du message, prêt à coller (mise en forme conservée)', () => copyRich(email.body, 'E-mail'));
+    add('🏷️ Copier l’objet', email.subject, () => navigator.clipboard.writeText(email.subject).then(() => showToast('Objet copié !', '📋')));
+    bar.appendChild(buildMailButton(email));
+  } else {
+    add('📋 Copier', 'Copier la réponse', () => copyRich(content, 'Réponse'));
+  }
+  return bar;
 }
 
 // ==============================================================================

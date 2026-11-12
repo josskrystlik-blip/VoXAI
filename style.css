@@ -408,3 +408,70 @@ input[type="range"]::-webkit-slider-thumb:hover {
 }
 .cf-option:has(input:checked) { border-color: rgba(56, 189, 248, 0.5); background: rgba(12, 74, 110, 0.25); }
 .cf-option input { margin-top: 3px; }
+
+/* Le texte utile reste sélectionnable (le reste de l'interface ne l'est pas) */
+#chatMessages, #transcriptTimeline, #tabContentSummary p, #tabContentSummary li, #tabContentSummary span {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Actions sous les réponses de l'assistant */
+.chat-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  user-select: none;
+  -webkit-user-select: none;
+}
+.chat-action-btn {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #c7d2fe;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  transition: background 0.15s, color 0.15s;
+}
+.chat-action-btn:hover { background: rgba(99, 102, 241, 0.28); color: #fff; }
+
+.chat-md p { margin: 0 0 8px; }
+.chat-md p:last-child { margin-bottom: 0; }
+.chat-md ul, .chat-md ol { margin: 0 0 8px 18px; }
+.chat-md ul { list-style: disc; }
+.chat-md ol { list-style: decimal; }
+.chat-md strong { color: #fff; font-weight: 700; }
+
+/* Bouton « Créer le mail » avec choix de la messagerie */
+.mail-split { position: relative; display: inline-flex; }
+.mail-split .mail-main { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.mail-split .mail-toggle { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: none; padding: 3px 8px; }
+.mail-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  width: 290px;
+  padding: 4px;
+  border-radius: 12px;
+  background: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+}
+.mail-menu.hidden { display: none; }
+.mail-menu button {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+  color: #e2e8f0;
+}
+.mail-menu button span { color: #94a3b8; font-size: 10px; }
+.mail-menu button:hover { background: rgba(99, 102, 241, 0.18); }
