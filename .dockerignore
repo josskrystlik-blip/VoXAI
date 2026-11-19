@@ -4,6 +4,8 @@
 !db.js
 !confluence.js
 !live.js
+!vendor/**
 !docker/40-voxai-confluence.sh
+!docker/30-voxai-defaults.sh
 !style.css
 !docker/nginx.conf

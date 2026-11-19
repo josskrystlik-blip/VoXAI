@@ -9,4 +9,12 @@ services:
       # Facultatif : publication Confluence sans configuration CORS
       # CONFLUENCE_URL: "https://confluence.mon-entreprise.fr"
       CONFLUENCE_URL: ""
+      # Facultatif : réglages imposés / par défaut pour tous les utilisateurs (voir README)
+      # VOXAI_DISABLE_CLOUD: "true"
+      # VOXAI_PROVIDER: "local"
+      # VOXAI_LLM_URL: "https://ia.mon-entreprise.fr/v1"
+      # VOXAI_LLM_MODEL: "gpt-oss-120b"
+      # VOXAI_STT_MODE: "local"
+      # VOXAI_STT_URL: "https://ia.mon-entreprise.fr/v1"
+      # VOXAI_STT_MODEL: "whisper-large-v3"
     restart: unless-stopped

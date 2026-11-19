@@ -1,0 +1,41 @@
+name: Vérification des styles
+
+# Les styles Tailwind et les polices sont générés dans vendor/ et versionnés
+# (l'interface ne dépend d'aucun CDN). Ce contrôle échoue si vendor/ n'a pas été
+# régénéré après une modification de l'interface : lancer `npm ci && npm run build`.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  vendor-a-jour:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - name: vendor/ doit être à jour
+        run: |
+          if ! git diff --quiet -- vendor; then
+            git --no-pager diff --stat -- vendor
+            echo "::error::vendor/ n'est pas à jour : lancez « npm ci && npm run build » puis commitez le résultat."
+            exit 1
+          fi
+      - name: Aucune ressource externe dans la page
+        run: |
+          if grep -nE '(src|href)="https?://' index.html | grep -v 'aistudio.google.com'; then
+            echo "::error::index.html charge une ressource externe : l'interface doit fonctionner sans Internet."
+            exit 1
+          fi
+          if grep -n "@import url(" style.css; then
+            echo "::error::style.css importe une ressource externe."
+            exit 1
+          fi

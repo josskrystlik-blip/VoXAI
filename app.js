@@ -149,12 +149,14 @@ const elements = {
 
 async function init() {
   await loadConfig();
+  // Les modules (transcription en direct…) attendent la configuration et la politique de l'administrateur
+  document.dispatchEvent(new CustomEvent('voxai:config-loaded'));
   await loadRecordings();
   setupEventListeners();
   initCanvas();
 
   // Si pas de clé d'API Gemini et provider Gemini, ouvrir les réglages pour guider l'utilisateur
-  if (state.config.provider === 'gemini' && !state.config.gemini_api_key) {
+  if (state.config.provider === 'gemini' && !state.config.gemini_api_key && !cloudDisabled()) {
     setTimeout(() => {
       openSettingsModal();
       showToast('Bienvenue ! Configurez votre clé d’API Gemini pour démarrer.', '✨');
@@ -190,9 +192,25 @@ function updateProviderBadge() {
   }
 }
 
+function cloudDisabled() {
+  return !!(state.config && state.config.policy && state.config.policy.disable_cloud);
+}
+
+/** Politique « sans cloud » (image Docker) : masque Gemini, le mode Hybride et l'explique. */
+function applyCloudPolicyUI() {
+  const off = cloudDisabled();
+  elements.selectGeminiProvider.classList.toggle('hidden', off);
+  elements.selectGeminiProvider.parentElement.classList.toggle('grid-cols-2', !off);
+  const cloudCard = document.getElementById('sttModeCloudLabel');
+  if (cloudCard) cloudCard.classList.toggle('hidden', off);
+  const note = document.getElementById('cloudPolicyNote');
+  if (note) note.classList.toggle('hidden', !off);
+}
+
 function openSettingsModal() {
   if (!state.config) return;
-  state.modalProvider = (state.config.provider === 'local' || state.config.provider === 'on_prem') ? 'on_prem' : 'gemini';
+  applyCloudPolicyUI();
+  state.modalProvider = (cloudDisabled() || state.config.provider === 'local' || state.config.provider === 'on_prem') ? 'on_prem' : 'gemini';
   updateModalProviderUI();
   
   elements.geminiApiKeyInput.value = state.config.gemini_api_key || '';

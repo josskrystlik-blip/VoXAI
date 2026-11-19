@@ -27,7 +27,12 @@
 
   const $ = (id) => document.getElementById(id);
 
+  function cloudPolicyOff() {
+    try { return !!(state.config && state.config.policy && state.config.policy.disable_cloud); } catch { return false; }
+  }
+
   function enabled() {
+    if (cloudPolicyOff()) return false;
     try { return localStorage.getItem(STORAGE_KEY) === 'on'; } catch { return false; }
   }
 
@@ -189,6 +194,13 @@
   function setup() {
     const toggle = $('liveToggle');
     if (!toggle) return;
+    if (cloudPolicyOff()) {
+      toggle.checked = false;
+      toggle.disabled = true;
+      $('liveToggleLabel').classList.add('opacity-50');
+      setStatus('Désactivée par votre administrateur (mode 100 % interne).', 'warn');
+      return;
+    }
     if (!SR) {
       toggle.disabled = true;
       $('liveToggleLabel').classList.add('opacity-50');
@@ -212,5 +224,6 @@
     });
   }
 
-  document.addEventListener('DOMContentLoaded', setup);
+  // Après le chargement de la configuration par app.js (politique « sans cloud » comprise)
+  document.addEventListener('voxai:config-loaded', setup, { once: true });
 })();
