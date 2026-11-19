@@ -127,6 +127,43 @@ Si votre entreprise expose un modèle via une API compatible OpenAI (vLLM, LiteL
 
 Côté serveur, l'origine de VoxAI (adresse GitHub Pages ou du conteneur Docker) doit être autorisée en CORS.
 
+## 🏭 Déploiement en entreprise (sans Internet)
+
+L'interface ne charge **aucune ressource externe** : styles et polices sont servis par l'application (`vendor/`). Avec l'image Docker, l'administrateur peut fixer les réglages de tous les utilisateurs par des variables d'environnement ; ils n'ont alors rien à configurer.
+
+| Variable | Rôle | Exemple |
+| :--- | :--- | :--- |
+| `VOXAI_DISABLE_CLOUD` | `true` : impose le mode 100 % interne (Gemini, mode Hybride et transcription en direct du navigateur désactivés et masqués) | `true` |
+| `VOXAI_PROVIDER` | Moteur par défaut : `local` ou `gemini` | `local` |
+| `VOXAI_LLM_URL` / `VOXAI_LLM_MODEL` | Serveur LLM compatible OpenAI et modèle | `https://ia.entreprise.fr/v1` / `gpt-oss-120b` |
+| `VOXAI_LLM_API_KEY` | Clé partagée (facultatif, voir ⚠️) | |
+| `VOXAI_STT_MODE` | `local` (Whisper interne) ou `cloud` | `local` |
+| `VOXAI_STT_URL` / `VOXAI_STT_MODEL` / `VOXAI_STT_API_KEY` | Serveur de transcription Whisper | `https://ia.entreprise.fr/v1` / `whisper-large-v3` |
+| `VOXAI_LANGUAGE` | Langue des enregistrements | `fr` |
+| `VOXAI_CONFLUENCE_URL` | URL Confluence pré-remplie (sinon `CONFLUENCE_URL` active le proxy) | |
+
+```bash
+docker run -d -p 8080:80 \
+  -e VOXAI_DISABLE_CLOUD=true -e VOXAI_PROVIDER=local \
+  -e VOXAI_LLM_URL=https://ia.entreprise.fr/v1 -e VOXAI_LLM_MODEL=gpt-oss-120b \
+  -e VOXAI_STT_MODE=local -e VOXAI_STT_URL=https://ia.entreprise.fr/v1 -e VOXAI_STT_MODEL=whisper-large-v3 \
+  -e CONFLUENCE_URL=https://confluence.entreprise.fr \
+  ghcr.io/josskrystlik-blip/voxai:latest
+```
+
+- Ces valeurs sont les réglages **par défaut** : un utilisateur peut les modifier, et seul ce qu'il change est enregistré ; si l'administrateur fait évoluer une URL ou un modèle, tous les autres en profitent. `VOXAI_DISABLE_CLOUD` s'impose toujours.
+- ⚠️ `VOXAI_LLM_API_KEY` est lisible par toute personne ayant accès à la page (`/voxai-defaults.json`) : réservez-la à un réseau interne, ou laissez chaque utilisateur saisir sa clé personnelle.
+
+### Modifier l'interface
+
+Les styles Tailwind et les polices sont générés dans `vendor/` (versionné). Après une modification de `index.html` ou des fichiers JS, régénérez-les :
+
+```bash
+npm ci && npm run build
+```
+
+Un contrôle automatique sur chaque pull request vérifie que `vendor/` est à jour et qu'aucune ressource externe n'est chargée.
+
 ## 📘 Publication dans Confluence
 
 Chaque enregistrement analysé peut être publié en compte rendu dans Confluence (bouton **📘 Confluence**) :
@@ -162,6 +199,7 @@ VoXAI/
 ├── confluence.js # Publication des comptes rendus dans Confluence (PAT)
 ├── live.js      # Transcription en direct (reconnaissance vocale du navigateur)
 ├── style.css    # Styles et animations
+├── vendor/      # Styles Tailwind et polices générés (npm run build) : aucun CDN
 ├── start.sh     # Serveur statique pour un usage local
 ├── Dockerfile   # Image Docker (nginx) + docker/ (config, proxy Confluence)
 ├── docker-compose.yml

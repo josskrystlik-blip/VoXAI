@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+/* Polices : vendor/fonts.css (servies localement) */
 
 /* ==============================================================================
    VOXAI - PREMIUM DESIGN SYSTEM (Dark Glassmorphic & Modern AI)
@@ -518,3 +518,8 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .live-box p { margin-bottom: 4px; }
 .live-ts { font-family: var(--font-mono); font-size: 10px; color: #818cf8; margin-right: 6px; }
 .live-interim { color: #94a3b8; font-style: italic; }
+
+/* Choix du mode de transcription : la carte cochée est mise en évidence */
+.stt-card { border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(15, 23, 42, 0.4); color: #cbd5e1; }
+.stt-card:hover { background: rgba(15, 23, 42, 0.6); }
+.stt-card:has(input:checked) { border-color: rgba(168, 85, 247, 0.55); background: rgba(59, 7, 100, 0.25); color: #fff; }

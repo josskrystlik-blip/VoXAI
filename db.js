@@ -94,9 +94,39 @@
     byIndex: (name, index, value) => tx([name], 'readonly', t => reqP(t.objectStore(name).index(index).getAll(value))),
   };
 
+  // Réglages par défaut fournis par l'administrateur (image Docker : voxai-defaults.json).
+  // Absents sur GitHub Pages ou en local : on garde alors les valeurs intégrées.
+  let serverDefaultsPromise = null;
+  function loadServerDefaults() {
+    if (!serverDefaultsPromise) {
+      serverDefaultsPromise = fetch('voxai-defaults.json', { cache: 'no-store' })
+        .then(res => (res.ok ? res.json() : {}))
+        .then(d => ({ config: (d && d.config) || {}, policy: (d && d.policy) || {} }))
+        .catch(() => ({ config: {}, policy: {} }));
+    }
+    return serverDefaultsPromise;
+  }
+
+  async function baseConfig() {
+    const d = await loadServerDefaults();
+    const base = { ...DEFAULT_CONFIG };
+    for (const [k, v] of Object.entries(d.config)) if (k in DEFAULT_CONFIG && v !== '') base[k] = v;
+    return { base, policy: d.policy };
+  }
+
+  /** Politique « sans cloud » : rien ne part vers Gemini, quel que soit le réglage enregistré. */
+  function applyPolicy(cfg, policy) {
+    if (policy && policy.disable_cloud) {
+      cfg.provider = 'local';
+      cfg.local_stt_mode = 'local';
+      cfg.gemini_api_key = '';
+    }
+    return cfg;
+  }
+
   async function loadConfig() {
-    const saved = await store.get('config', 'main');
-    return { ...DEFAULT_CONFIG, ...(saved || {}) };
+    const [{ base, policy }, saved] = await Promise.all([baseConfig(), store.get('config', 'main')]);
+    return applyPolicy({ ...base, ...(saved || {}) }, policy);
   }
 
   async function getFiles(recId) {
@@ -592,16 +622,26 @@ Lorsqu'on te demande de rédiger un e-mail, réponds UNIQUEMENT avec l'e-mail : 
     if (path === '/api/config') {
       if (method === 'GET') {
         const cfg = await loadConfig();
+        const { policy } = await baseConfig();
         const k = cfg.gemini_api_key;
         if (k) cfg.gemini_api_key_masked = k.length > 8 ? `${k.slice(0, 4)}...${k.slice(-4)}` : '***';
+        cfg.policy = { disable_cloud: !!policy.disable_cloud };
         return json(200, cfg);
       }
       const data = await req.json();
-      const cfg = await loadConfig();
+      const { base, policy } = await baseConfig();
+      const cfg = { ...base, ...((await store.get('config', 'main')) || {}) };
       for (const k of Object.keys(DEFAULT_CONFIG)) if (k in data) cfg[k] = data[k];
       if (cfg.local_llm_url) cfg.on_prem_llm_url = cfg.local_llm_url;
       if (cfg.local_llm_model) cfg.on_prem_llm_model = cfg.local_llm_model;
-      await store.put('config', cfg, 'main');
+      applyPolicy(cfg, policy);
+      // On ne conserve que ce qui diffère des réglages par défaut : si l'administrateur
+      // les change plus tard (nouvelle URL, nouveau modèle), les utilisateurs en profitent.
+      const own = {};
+      for (const [key, value] of Object.entries(cfg)) {
+        if (JSON.stringify(value) !== JSON.stringify(base[key])) own[key] = value;
+      }
+      await store.put('config', own, 'main');
       return json(200, { success: true, message: 'Configuration enregistrée avec succès !' });
     }
 

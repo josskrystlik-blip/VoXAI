@@ -1,0 +1,16 @@
+{
+  "name": "voxai",
+  "private": true,
+  "description": "Outils de build de VoxAI (styles Tailwind et polices servis localement, sans CDN)",
+  "license": "AGPL-3.0",
+  "scripts": {
+    "build:css": "tailwindcss -c tailwind.config.js -i src/tailwind.css -o vendor/tailwind.css --minify",
+    "build:fonts": "node scripts/copy-fonts.js",
+    "build": "npm run build:fonts && npm run build:css"
+  },
+  "devDependencies": {
+    "@fontsource-variable/jetbrains-mono": "5.2.5",
+    "@fontsource-variable/plus-jakarta-sans": "5.2.5",
+    "tailwindcss": "3.4.17"
+  }
+}
