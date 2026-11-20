@@ -305,6 +305,45 @@ function maliciousBackup() {
     await context.close();
   });
 
+  await scenario('Séries : noms piégés et adresses e-mail malveillantes', async () => {
+    const { context, page } = await openApp(browser, base, {
+      gemini: () => JSON.stringify({ title: 'R', transcription: [{ speaker: XSS, timestamp: '00:00', text: 'ok' }], summary: { executive: 'ok', decisions: [], action_items: [], key_points: [], tags: [] } })
+    });
+    await page.evaluate(() => fetch('/api/config', { method: 'POST', body: JSON.stringify({ gemini_api_key: 'test-key' }) }));
+    const created = await page.evaluate(x => fetch('/api/series', { method: 'POST', body: JSON.stringify({
+      name: `Série ${x.XSS}`, type: x.XSS,
+      participants: [
+        { name: x.XSS2, email: 'bob@corp.fr\r\nBcc: espion@exemple.com', aliases: ['Orateur 3', x.XSS] },
+        { name: 'Alice', email: 'alice@corp.fr' },
+        { name: 'alice', email: 'doublon@corp.fr' }
+      ],
+      confluence_parent: { spaceKey: '"><img src=x>', id: '1 OR 1=1', title: x.XSS }
+    }) }).then(r => r.json()), { XSS, XSS2 });
+    assert(created.type === 'weekly', `type non validé : ${created.type}`);
+    assert(created.participants.length === 2, `doublon de participant accepté (${created.participants.length})`);
+    assert(created.participants[0].email === '', `adresse piégée conservée : ${JSON.stringify(created.participants[0].email)}`);
+    assert(!created.participants[0].aliases.includes('Orateur 3'), 'alias générique « Orateur N » mémorisé');
+    assert(created.confluence_parent === null, 'page Confluence parente invalide acceptée');
+    await page.reload();
+    await page.waitForFunction(() => typeof state !== 'undefined' && state.config);
+    await page.waitForTimeout(600);
+    await page.selectOption('#seriesSelect', created.id);
+    await page.setInputFiles('#fileUploadInput', AUDIO);
+    await page.waitForFunction(() => state.activeRecording && state.activeRecording.status === 'completed', null, { timeout: 15000 });
+    await page.evaluate(() => switchTab('transcript'));
+    await page.click('#seriesManageBtn');
+    await page.click(`#seriesList .series-item[data-id="${created.id}"]`);
+    await page.waitForTimeout(300);
+    await assertClean(page, 'séries (fenêtre, sélecteurs, enregistrement)');
+    const eml = await page.evaluate(() => buildEml({ subject: 'CR', body: 'x', to: ['ok@corp.fr', 'bob@corp.fr\r\nBcc: espion@exemple.com', 'a@b.fr, c@d.fr'] }));
+    const headers = eml.split('\r\n\r\n')[0].split('\r\n');
+    assert(!headers.some(h => /^Bcc:/i.test(h)), `en-tête injecté par un destinataire : ${headers.join(' | ')}`);
+    assert(headers.includes('To: ok@corp.fr'), `destinataires inattendus : ${headers.find(h => h.startsWith('To:'))}`);
+    const mailto = await page.evaluate(() => mailtoUrl({ subject: 'CR', body: 'x', to: ['ok@corp.fr', 'x@y.fr?bcc=espion@exemple.com'] }).url);
+    assert(!/bcc/i.test(mailto), `paramètre injecté dans le lien mailto : ${mailto}`);
+    await context.close();
+  });
+
   await scenario('E-mail .eml : pas d’injection d’en-tête par l’objet', async () => {
     const { context, page } = await openApp(browser, base);
     const eml = await page.evaluate(() => buildEml({ subject: 'CR\r\nBcc: espion@exemple.com\r\nX-Evil: 1', body: 'Bonjour\r\n\r\n--fin' }));

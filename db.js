@@ -11,7 +11,7 @@
 
   const DB_NAME = 'voxai';
   const GLOBAL_CHAT = '__assistant_global__'; // historique de l'assistant global dans le magasin « chat »
-  const DB_VERSION = 1;
+  const DB_VERSION = 2; // v2 : séries de réunions
 
   const DEFAULT_CONFIG = {
     provider: 'gemini',
@@ -49,6 +49,7 @@
         const db = req.result;
         if (!db.objectStoreNames.contains('config')) db.createObjectStore('config');
         if (!db.objectStoreNames.contains('recordings')) db.createObjectStore('recordings', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('series')) db.createObjectStore('series', { keyPath: 'id' });
         if (!db.objectStoreNames.contains('files')) {
           const s = db.createObjectStore('files', { keyPath: 'id', autoIncrement: true });
           s.createIndex('recording_id', 'recording_id');
@@ -138,6 +139,11 @@
   // ============================================================================
   // Utilitaires
   // ============================================================================
+
+  async function validSeriesId(id) {
+    if (!id || !ID_RE.test(String(id))) return null;
+    return (await store.get('series', String(id))) ? String(id) : null;
+  }
 
   function newRecId() {
     return `rec_${Math.floor(Date.now() / 1000)}_${Math.random().toString(16).slice(2, 8)}`;
@@ -334,7 +340,26 @@
     return parts;
   }
 
-  async function processWithGemini(audioFiles, cfg) {
+  /**
+   * Consignes liées à la série : noms des participants (pour nommer les orateurs) et
+   * type de réunion (forme de la synthèse). Chaîne vide hors série.
+   */
+  function seriesHint(ctx) {
+    if (!ctx) return '';
+    const lines = [];
+    const people = (ctx.participants || []).map(p => p.name).filter(Boolean);
+    if (people.length) {
+      lines.push(`Participants habituels de cette réunion : ${people.join(', ')}. Utilise ces noms pour les orateurs quand tu les reconnais avec certitude (présentations, interpellations par le prénom) ; sinon garde « Orateur 1 », « Orateur 2 »… N'invente jamais de participant absent de cette liste.`);
+    }
+    const style = {
+      weekly: "Type de réunion : point d'équipe récurrent. Synthèse courte, centrée sur l'avancement et les actions.",
+      steering: 'Type de réunion : comité de pilotage. Mets en avant les décisions, les risques et les arbitrages.'
+    }[ctx.type];
+    if (style) lines.push(style);
+    return lines.length ? `\n\nContexte de la série « ${ctx.name} » :\n- ${lines.join('\n- ')}` : '';
+  }
+
+  async function processWithGemini(audioFiles, cfg, ctx) {
     const multi = audioFiles.length > 1;
     const filesDesc = audioFiles.map(a => `'${a.name}'`).join(', ');
     const prompt = multi
@@ -371,7 +396,7 @@ Règles impératives :
 4. ${REFS_RULE}
 5. Réponds UNIQUEMENT avec le JSON pur.`;
 
-    const parts = [{ text: prompt }, ...(await audioParts(audioFiles, 'ENREGISTREMENT'))];
+    const parts = [{ text: prompt + seriesHint(ctx) }, ...(await audioParts(audioFiles, 'ENREGISTREMENT'))];
     const { text } = await geminiGenerate(cfg, {
       contents: [{ parts }],
       generationConfig: { temperature: 0.2, response_mime_type: 'application/json' }
@@ -379,7 +404,7 @@ Règles impératives :
     return cleanJson(text);
   }
 
-  async function transcribeWithGemini(audioFiles, cfg) {
+  async function transcribeWithGemini(audioFiles, cfg, ctx) {
     if (!(cfg.gemini_api_key || '').trim()) {
       throw new Error("Pour utiliser la transcription rapide Cloud avec votre LLM local, la clé d'API Gemini doit être configurée dans les paramètres (ou choisissez le mode 'Whisper Local' 100% hors-ligne).");
     }
@@ -397,7 +422,7 @@ Indique les orateurs distincts et les horodatages réels.
 Réponds EXCLUSIVEMENT avec un JSON pur respectant cette structure exacte :
 {"transcription": [{"file_index": 1, "speaker": "Orateur 1", "timestamp": "00:00", "text": "Texte fidèlement retranscrit..."}]}`;
 
-    const parts = [{ text: prompt }, ...(await audioParts(audioFiles, 'PISTE'))];
+    const parts = [{ text: prompt + seriesHint(ctx) }, ...(await audioParts(audioFiles, 'PISTE'))];
     const { text } = await geminiGenerate(cfg, {
       contents: [{ parts }],
       generationConfig: { temperature: 0.1, response_mime_type: 'application/json' }
@@ -405,7 +430,7 @@ Réponds EXCLUSIVEMENT avec un JSON pur respectant cette structure exacte :
     return cleanJson(text).transcription || [];
   }
 
-  async function summarizeWithLocalLLM(transcription, audioFiles, cfg) {
+  async function summarizeWithLocalLLM(transcription, audioFiles, cfg, ctx) {
     const { model } = localChatUrl(cfg);
     const multi = audioFiles.length > 1;
     const transcript = transcription.map((it, i) => {
@@ -434,7 +459,7 @@ Chaque ligne de la transcription commence par son numéro (#1, #2...). ${REFS_RU
     try {
       const content = await localChat(cfg, [
         { role: 'system', content: 'Tu es un analyste IA de réunions et notes vocales. Tu réponds UNIQUEMENT par un objet JSON pur et valide, sans markdown.' },
-        { role: 'user', content: prompt }
+        { role: 'user', content: prompt + seriesHint(ctx) }
       ], 0.2, 300000, { jsonMode: true });
       const parsed = cleanJson(content);
       parsed.transcription = transcription;
@@ -468,11 +493,11 @@ Chaque ligne de la transcription commence par son numéro (#1, #2...). ${REFS_RU
     return (await res.json()).text || '';
   }
 
-  async function processRecording(audioFiles, cfg) {
-    if (cfg.provider === 'gemini') return processWithGemini(audioFiles, cfg);
+  async function processRecording(audioFiles, cfg, ctx) {
+    if (cfg.provider === 'gemini') return processWithGemini(audioFiles, cfg, ctx);
     if ((cfg.local_stt_mode || 'cloud') === 'cloud') {
-      const transcription = await transcribeWithGemini(audioFiles, cfg);
-      return summarizeWithLocalLLM(transcription, audioFiles, cfg);
+      const transcription = await transcribeWithGemini(audioFiles, cfg, ctx);
+      return summarizeWithLocalLLM(transcription, audioFiles, cfg, ctx);
     }
     const sttUrl = (cfg.on_prem_stt_url || 'http://localhost:8000/v1').replace(/\/+$/, '');
     const transcription = [];
@@ -486,7 +511,7 @@ Chaque ligne de la transcription commence par son numéro (#1, #2...). ${REFS_RU
           cfg.on_prem_stt_api_key || cfg.local_llm_api_key)
       });
     }
-    return summarizeWithLocalLLM(transcription, audioFiles, cfg);
+    return summarizeWithLocalLLM(transcription, audioFiles, cfg, ctx);
   }
 
   const EMAIL_RULE = `Lorsqu'on te demande de rédiger un e-mail, réponds UNIQUEMENT avec l'e-mail : une première ligne « Objet : … », une ligne vide, puis le corps du message (formule d'appel, contenu, formule de politesse), sans commentaire avant ni après.`;
@@ -610,6 +635,57 @@ ${EDIT_RULE}`;
 
   const ID_RE = /^[\w-]{1,100}$/;
 
+  // Séries de réunions -------------------------------------------------------
+  const SERIES_TYPES = ['weekly', 'steering', 'other'];
+  const EMAIL_RE = /^[A-Za-z0-9.!#$%&'*+\/=?^_`{|}~-]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
+  /** « Orateur 2 », « Speaker 3 »… : jamais mémorisés comme alias (la numérotation change à chaque réunion). */
+  const GENERIC_SPEAKER_RE = /^(orateur|speaker|intervenant|locuteur|participant)\s*\(?\s*(piste\s*)?\d*\s*\)?$/i;
+
+  function sanitizeSeries(s, keepId) {
+    if (!s || typeof s !== 'object') return null;
+    const name = str(s.name, 120).trim();
+    if (!name) return null;
+    const seen = new Set();
+    const participants = (Array.isArray(s.participants) ? s.participants : []).slice(0, 50)
+      .filter(p => p && typeof p === 'object')
+      .map(p => {
+        const email = str(p.email, 254).trim();
+        return {
+          name: str(p.name, 120).trim(),
+          email: EMAIL_RE.test(email) ? email : '',
+          aliases: [...new Set((Array.isArray(p.aliases) ? p.aliases : []).map(a => str(a, 120).trim())
+            .filter(a => a && !GENERIC_SPEAKER_RE.test(a)))].slice(0, 20)
+        };
+      })
+      .filter(p => p.name && !seen.has(p.name.toLowerCase()) && seen.add(p.name.toLowerCase()));
+    const cp = s.confluence_parent && typeof s.confluence_parent === 'object' ? s.confluence_parent : null;
+    const spaceKey = cp ? str(cp.spaceKey, 255) : '';
+    const pageId = cp ? str(cp.id, 40) : '';
+    return {
+      id: keepId && ID_RE.test(str(s.id, 101)) ? s.id : `ser_${Date.now().toString(36)}_${Math.random().toString(16).slice(2, 8)}`,
+      name,
+      type: SERIES_TYPES.includes(s.type) ? s.type : 'weekly',
+      participants,
+      confluence_parent: /^[\w~.-]{1,255}$/.test(spaceKey) && /^\d{1,40}$/.test(pageId)
+        ? { spaceKey, id: pageId, title: str(cp.title, 255) } : null,
+      created_at: (() => { const d = new Date(str(s.created_at, 40)); return isNaN(d) ? new Date().toISOString() : d.toISOString(); })()
+    };
+  }
+
+  /** Remplace les noms connus (alias non génériques) par le nom du participant. */
+  function applySeriesAliases(transcription, series) {
+    if (!series || !series.participants.length) return transcription;
+    const map = new Map();
+    for (const p of series.participants) {
+      map.set(p.name.toLowerCase(), p.name);
+      for (const a of p.aliases) map.set(a.toLowerCase(), p.name);
+    }
+    return transcription.map(seg => {
+      const known = map.get(String(seg.speaker || '').trim().toLowerCase());
+      return known ? { ...seg, speaker: known } : seg;
+    });
+  }
+
   /** Enregistrement importé depuis une sauvegarde : champs connus et typés uniquement. */
   function sanitizeImportedRecording(r) {
     if (!r || typeof r !== 'object' || !ID_RE.test(str(r.id, 101))) return null;
@@ -627,6 +703,9 @@ ${EDIT_RULE}`;
       transcription,
       summary: r.summary && typeof r.summary === 'object' ? sanitizeSummary(r.summary, null, transcription.length) : null,
       error_message: r.error_message ? str(r.error_message, 2000) : null,
+      series_id: ID_RE.test(str(r.series_id, 101)) ? r.series_id : null,
+      ...(r.confluence_page && /^https?:\/\//i.test(str(r.confluence_page.url, 2000))
+        ? { confluence_page: { url: str(r.confluence_page.url, 2000), title: str(r.confluence_page.title, 255) } } : {}),
       ...(r.live_transcript ? { live_transcript: str(r.live_transcript, 500000) } : {})
     };
   }
@@ -823,6 +902,40 @@ ${EDIT_RULE}`;
       return json(200, await testConnection(text ? { ...(await loadConfig()), ...JSON.parse(text) } : await loadConfig()));
     }
 
+    // Séries de réunions
+    if (path === '/api/series' && method === 'GET') {
+      const list = (await store.all('series')).sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+      return json(200, list);
+    }
+    if (path === '/api/series' && method === 'POST') {
+      const series = sanitizeSeries(await req.json().catch(() => null), false);
+      if (!series) return json(400, { error: 'Le nom de la série est obligatoire' });
+      await store.put('series', series);
+      return json(201, series);
+    }
+    if (seg[0] === 'api' && seg[1] === 'series' && seg[2]) {
+      const existing = await store.get('series', seg[2]);
+      if (!existing) return json(404, { error: 'Série introuvable' });
+      if (method === 'DELETE') {
+        await tx(['series', 'recordings'], 'readwrite', async t => {
+          t.objectStore('series').delete(existing.id);
+          const recs = t.objectStore('recordings');
+          for (const r of await reqP(recs.getAll())) {
+            if (r.series_id === existing.id) recs.put({ ...r, series_id: null });
+          }
+        });
+        return json(200, { success: true });
+      }
+      if (method === 'POST') {
+        const data = await req.json().catch(() => ({}));
+        const series = sanitizeSeries({ ...existing, ...data, id: existing.id, created_at: existing.created_at }, true);
+        if (!series) return json(400, { error: 'Le nom de la série est obligatoire' });
+        await store.put('series', series);
+        return json(200, series);
+      }
+      return json(200, existing);
+    }
+
     if (path === '/api/recordings' && method === 'GET') {
       const [recs, files] = await Promise.all([store.all('recordings'), store.all('files')]);
       const counts = {};
@@ -831,7 +944,7 @@ ${EDIT_RULE}`;
         .map(r => ({
           id: r.id, title: r.title, created_at: r.created_at, duration: r.duration,
           filename: r.filename, mime_type: r.mime_type, file_size: r.file_size,
-          status: r.status, file_count: counts[r.id] || 0
+          status: r.status, file_count: counts[r.id] || 0, series_id: r.series_id || null
         }))
         .sort((a, b) => b.created_at.localeCompare(a.created_at));
       return json(200, rows);
@@ -844,7 +957,7 @@ ${EDIT_RULE}`;
       await store.put('recordings', {
         id, title, created_at: new Date().toISOString(), duration: 0, filename: '',
         mime_type: 'audio/webm', file_size: 0, status: 'recorded', transcription: null,
-        summary: null, error_message: null
+        summary: null, error_message: null, series_id: await validSeriesId(data.series_id)
       });
       return json(201, { id, title, status: 'recorded' });
     }
@@ -858,7 +971,7 @@ ${EDIT_RULE}`;
       await store.put('recordings', {
         id, title, created_at: new Date().toISOString(), duration: 0, filename: '',
         mime_type: mime, file_size: 0, status: 'recorded', transcription: null,
-        summary: null, error_message: null
+        summary: null, error_message: null, series_id: await validSeriesId(req.headers.get('X-Series-Id'))
       });
       const f = await addFile(id, blob, mime, title, duration);
       return json(201, { id, title, filename: f.filename, duration: f.duration, status: 'recorded' });
@@ -899,15 +1012,17 @@ ${EDIT_RULE}`;
           blob: f.blob, mime_type: f.mime_type, name: f.original_name, filename: f.filename, duration: f.duration
         }));
         const cfg = await loadConfig();
+        const series = rec.series_id ? await store.get('series', rec.series_id) : null;
         await store.put('recordings', { ...rec, status: 'processing', error_message: null });
         try {
-          const result = await processRecording(audioFiles, cfg);
+          const result = await processRecording(audioFiles, cfg, series);
           const fresh = await store.get('recordings', recId);
           if (fresh) {
-            const transcription = sanitizeTranscription(result.transcription);
+            const transcription = applySeriesAliases(sanitizeTranscription(result.transcription), series);
             await store.put('recordings', {
               ...fresh,
-              title: str(result.title, 300).trim() || fresh.title,
+              // Dans une série, le titre daté (« <série> — <date> ») est conservé
+              title: fresh.series_id ? fresh.title : (str(result.title, 300).trim() || fresh.title),
               transcription,
               summary: sanitizeSummary(result.summary, null, transcription.length),
               status: 'completed'
@@ -997,6 +1112,39 @@ ${EDIT_RULE}`;
         const transcription = (rec.transcription || []).map(seg =>
           seg.speaker === oldName ? { ...seg, speaker: newName } : seg);
         await store.put('recordings', { ...rec, transcription, summary: rec.summary ? swap(rec.summary) : rec.summary });
+        // Série : le nom rejoint les participants ; un ancien nom réel devient un alias (jamais « Orateur N »)
+        let participant = null;
+        const series = rec.series_id ? await store.get('series', rec.series_id) : null;
+        if (series) {
+          const participants = series.participants.map(p => ({ ...p, aliases: [...p.aliases] }));
+          let p = participants.find(x => x.name.toLowerCase() === newName.toLowerCase());
+          const created = !p;
+          if (!p) { p = { name: newName, email: '', aliases: [] }; participants.push(p); }
+          if (!GENERIC_SPEAKER_RE.test(oldName) && oldName.toLowerCase() !== p.name.toLowerCase()) p.aliases.push(oldName);
+          const saved = sanitizeSeries({ ...series, participants }, true);
+          if (saved) { await store.put('series', saved); participant = { name: p.name, created }; }
+        }
+        return json(200, { success: true, participant });
+      }
+
+      // Rattachement à une série (ou détachement : series_id vide)
+      if (action === 'series' && method === 'POST') {
+        const rec = await store.get('recordings', recId);
+        if (!rec) return json(404, { error: 'Enregistrement non trouvé' });
+        const { series_id = null } = await req.json().catch(() => ({}));
+        const id = await validSeriesId(series_id);
+        if (series_id && !id) return json(404, { error: 'Série introuvable' });
+        await store.put('recordings', { ...rec, series_id: id });
+        return json(200, { success: true, series_id: id });
+      }
+
+      // Dernière page Confluence publiée (lien repris dans l'e-mail aux participants)
+      if (action === 'confluence' && method === 'POST') {
+        const rec = await store.get('recordings', recId);
+        if (!rec) return json(404, { error: 'Enregistrement non trouvé' });
+        const { url = '', title = '' } = await req.json().catch(() => ({}));
+        if (!/^https?:\/\//i.test(String(url))) return json(400, { error: 'Lien invalide' });
+        await store.put('recordings', { ...rec, confluence_page: { url: str(url, 2000), title: str(title, 255) } });
         return json(200, { success: true });
       }
 
@@ -1066,7 +1214,7 @@ ${EDIT_RULE}`;
   const BACKUP_MAGIC = 'VOXAI-BACKUP 1';
 
   async function exportBackup() {
-    const [recordings, files, chat] = await Promise.all([store.all('recordings'), store.all('files'), store.all('chat')]);
+    const [recordings, files, chat, series] = await Promise.all([store.all('recordings'), store.all('files'), store.all('chat'), store.all('series')]);
     let offset = 0;
     const fileEntries = files.map(({ blob, id, ...meta }) => {
       const entry = { ...meta, offset, size: blob.size, type: blob.type };
@@ -1075,7 +1223,7 @@ ${EDIT_RULE}`;
     });
     const manifest = JSON.stringify({
       app: 'VoxAI', version: 1, exported_at: new Date().toISOString(),
-      recordings, files: fileEntries, chat: chat.map(({ id, ...m }) => m)
+      recordings, files: fileEntries, chat: chat.map(({ id, ...m }) => m), series
     });
     const manifestBytes = new TextEncoder().encode(manifest);
     const blob = new Blob([`${BACKUP_MAGIC}\n${manifestBytes.length}\n`, manifestBytes, ...files.map(f => f.blob)],
@@ -1095,14 +1243,19 @@ ${EDIT_RULE}`;
     const dataStart = start + manifestLength;
 
     const existing = new Set((await store.all('recordings')).map(r => r.id));
+    const existingSeries = new Set((await store.all('series')).map(s => s.id));
+    const seriesToImport = (Array.isArray(manifest.series) ? manifest.series : [])
+      .map(s => sanitizeSeries(s, true)).filter(s => s && !existingSeries.has(s.id));
     const existingFiles = new Set((await store.all('files')).map(f => f.filename));
     const toImport = (Array.isArray(manifest.recordings) ? manifest.recordings : [])
       .map(sanitizeImportedRecording)
       .filter(r => r && !existing.has(r.id));
     const ids = new Set(toImport.map(r => r.id));
 
-    await tx(['recordings', 'files', 'chat'], 'readwrite', async t => {
-      for (const rec of toImport) t.objectStore('recordings').put(rec);
+    const knownSeries = new Set([...existingSeries, ...seriesToImport.map(s => s.id)]);
+    await tx(['recordings', 'files', 'chat', 'series'], 'readwrite', async t => {
+      for (const s of seriesToImport) t.objectStore('series').put(s);
+      for (const rec of toImport) t.objectStore('recordings').put(knownSeries.has(rec.series_id) ? rec : { ...rec, series_id: null });
       for (const f of Array.isArray(manifest.files) ? manifest.files : []) {
         if (!f || !ids.has(f.recording_id)) continue;
         const filename = str(f.filename, 300);

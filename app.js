@@ -653,7 +653,9 @@ async function handleRecordingStopped() {
   const mimeType = state.mediaRecorder.mimeType || 'audio/webm';
   const audioBlob = new Blob(state.audioChunks, { type: mimeType });
   const duration = state.recordElapsedSec;
-  const customTitle = elements.recordTitleInput.value.trim() || 'Conversation du ' + new Date().toLocaleDateString('fr-FR');
+  const customTitle = elements.recordTitleInput.value.trim()
+    || (window.VoxSeries && VoxSeries.defaultTitle())
+    || 'Conversation du ' + new Date().toLocaleDateString('fr-FR');
 
   const liveText = state.liveText || '';
   state.liveText = '';
@@ -673,7 +675,8 @@ async function uploadAndProcessAudio(blob, title, duration, mimeType, liveText =
       headers: {
         'Content-Type': mimeType,
         'X-Audio-Duration': duration.toString(),
-        'X-Audio-Title': encodeURIComponent(title)
+        'X-Audio-Title': encodeURIComponent(title),
+        'X-Series-Id': (window.VoxSeries && VoxSeries.selectedId()) || ''
       },
       body: blob
     });
@@ -700,7 +703,7 @@ async function uploadAndProcessAudio(blob, title, duration, mimeType, liveText =
 }
 
 async function uploadBatchFilesAndProcess(files) {
-  const defaultTitle = `Session groupée (${files.length} enregistrements)`;
+  const defaultTitle = (window.VoxSeries && VoxSeries.defaultTitle()) || `Session groupée (${files.length} enregistrements)`;
   const title = prompt("Titre pour cette analyse conjointe :", defaultTitle) || defaultTitle;
 
   showToast(`Création de la session pour ${files.length} fichiers...`, '⏳');
@@ -710,7 +713,7 @@ async function uploadBatchFilesAndProcess(files) {
     const createRes = await fetch('/api/recordings/create', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title })
+      body: JSON.stringify({ title, series_id: (window.VoxSeries && VoxSeries.selectedId()) || null })
     });
     const sessionData = await createRes.json();
     const recId = sessionData.id;
@@ -764,7 +767,7 @@ function renderRecordingsList() {
   list.innerHTML = '';
 
   const filtered = state.recordings.filter(r => {
-    return r.title.toLowerCase().includes(query);
+    return r.title.toLowerCase().includes(query) && (!window.VoxSeries || VoxSeries.matchesFilter(r));
   });
 
   if (filtered.length === 0) {
@@ -925,6 +928,7 @@ function renderRecordingDetails() {
 
   updateDownloadAudioBtn();
   updateAssistantContext();
+  document.dispatchEvent(new CustomEvent('voxai:recording-shown'));
 
   // Render Tabs
   const search = document.getElementById('searchTranscript');
@@ -1061,7 +1065,12 @@ async function renameSpeaker(oldName) {
   rec.summary = fresh.summary;
   renderSummaryTab(rec.summary);
   renderTranscriptTab(rec.transcription);
-  showToast(`« ${oldName} » renommé en « ${newName} »`, '✏️');
+  if (data.participant && data.participant.created) {
+    showToast(`« ${newName} » ajouté aux participants de la série`, '👥');
+    if (window.VoxSeries) VoxSeries.reload();
+  } else {
+    showToast(`« ${oldName} » renommé en « ${newName} »`, '✏️');
+  }
 }
 
 // ==============================================================================
@@ -1541,11 +1550,18 @@ async function copyRich(markdown, label) {
 }
 
 /** Lien mailto ; les liens trop longs étant tronqués par certaines messageries, le corps est alors omis. */
+/** Adresses de destinataires sûres : format strict, sans espace, virgule ni retour à la ligne. */
+const RECIPIENT_RE = /^[A-Za-z0-9.!#$%&'*+\/=?^_`{|}~-]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
+function recipientsOf(email) {
+  return [...new Set((Array.isArray(email.to) ? email.to : []).map(a => String(a).trim()).filter(a => RECIPIENT_RE.test(a)))];
+}
+
 function mailtoUrl(email) {
+  const to = recipientsOf(email).map(encodeURIComponent).join(',');
   const subject = encodeURIComponent(email.subject);
   const body = encodeURIComponent(stripMarkdown(email.body));
-  const fits = subject.length + body.length <= 1800;
-  return { url: fits ? `mailto:?subject=${subject}&body=${body}` : `mailto:?subject=${subject}`, bodyIncluded: fits };
+  const fits = to.length + subject.length + body.length <= 1800;
+  return { url: fits ? `mailto:${to}?subject=${subject}&body=${body}` : `mailto:${to}?subject=${subject}`, bodyIncluded: fits };
 }
 
 /** Lien de rédaction Outlook sur le web (Microsoft 365). */
@@ -1553,7 +1569,8 @@ function outlookWebUrl(email) {
   const subject = encodeURIComponent(email.subject);
   const body = encodeURIComponent(stripMarkdown(email.body));
   const fits = subject.length + body.length <= 7000;
-  const url = `https://outlook.office.com/mail/deeplink/compose?subject=${subject}${fits ? `&body=${body}` : ''}`;
+  const to = recipientsOf(email).map(encodeURIComponent).join(',');
+  const url = `https://outlook.office.com/mail/deeplink/compose?${to ? `to=${to}&` : ''}subject=${subject}${fits ? `&body=${body}` : ''}`;
   return { url, bodyIncluded: fits };
 }
 
@@ -1562,7 +1579,8 @@ function gmailUrl(email) {
   const subject = encodeURIComponent(email.subject);
   const body = encodeURIComponent(stripMarkdown(email.body));
   const fits = subject.length + body.length <= 7000;
-  const url = `https://mail.google.com/mail/?view=cm&fs=1&su=${subject}${fits ? `&body=${body}` : ''}`;
+  const to = recipientsOf(email).map(encodeURIComponent).join(',');
+  const url = `https://mail.google.com/mail/?view=cm&fs=1${to ? `&to=${to}` : ''}&su=${subject}${fits ? `&body=${body}` : ''}`;
   return { url, bodyIncluded: fits };
 }
 
@@ -1582,7 +1600,7 @@ function buildEml(email) {
   const html = `<html><head><meta charset="utf-8"></head><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt">${markdownToHtml(email.body)}</body></html>`;
   return [
     'X-Unsent: 1',
-    'To: ',
+    `To: ${recipientsOf(email).join(', ')}`,
     `Subject: =?UTF-8?B?${base64Utf8(email.subject).replace(/\r\n/g, '')}?=`,
     'MIME-Version: 1.0',
     `Content-Type: multipart/alternative; boundary="${boundary}"`,
@@ -2139,7 +2157,7 @@ function setupEventListeners() {
 
     if (files.length === 1) {
       const file = files[0];
-      const title = file.name.replace(/\.[^/.]+$/, '');
+      const title = (window.VoxSeries && VoxSeries.defaultTitle()) || file.name.replace(/\.[^/.]+$/, '');
       await uploadAndProcessAudio(file, title, 0, file.type || 'audio/webm');
     } else {
       await uploadBatchFilesAndProcess(files);

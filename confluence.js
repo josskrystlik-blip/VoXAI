@@ -255,12 +255,13 @@
     return h;
   }
 
-  function labelsFor(rec) {
+  const toLabel = t => String(t).toLowerCase().normalize('NFC').replace(/\s+/g, '-').replace(/[^\p{L}\p{N}_-]/gu, '');
+
+  function labelsFor(rec, series) {
     const tags = (rec.summary && rec.summary.tags) || [];
-    const labels = tags
-      .map(t => String(t).toLowerCase().normalize('NFC').replace(/\s+/g, '-').replace(/[^\p{L}\p{N}_-]/gu, ''))
-      .filter(Boolean);
-    return [...new Set(['voxai', ...labels])].slice(0, 20);
+    const labels = tags.map(toLabel).filter(Boolean);
+    const seriesLabel = series ? toLabel(series.name).slice(0, 60) : '';
+    return [...new Set(['voxai', ...(seriesLabel ? [seriesLabel] : []), ...labels])].slice(0, 20);
   }
 
   // ============================================================================
@@ -438,40 +439,77 @@
     const action = (document.querySelector('input[name="cfAction"]:checked') || {}).value;
     $('cfCreateOptions').classList.toggle('hidden', action !== 'create');
     $('cfUpdateOptions').classList.toggle('hidden', action !== 'update');
-    $('cfPublishBtn').textContent = action === 'update' ? 'Mettre à jour la page' : 'Créer la page';
+    $('cfPublishBtn').textContent = ui.mode === 'pick' ? 'Choisir cette page'
+      : action === 'update' ? 'Mettre à jour la page' : 'Créer la page';
   }
 
-  async function open() {
+  function seriesOf(rec) {
+    return rec && rec.series_id && window.VoxSeries ? VoxSeries.get(rec.series_id) : null;
+  }
+
+  /**
+   * Ouvre la fenêtre. Mode « publish » : publication du compte rendu ouvert (préremplie
+   * depuis sa série). Mode « pick » : choix d'une page (page parente d'une série).
+   */
+  async function open({ pick = false, preset = null } = {}) {
     const rec = state.activeRecording;
-    if (!rec) return;
+    if (!pick && !rec) return;
+    ui.mode = pick ? 'pick' : 'publish';
     ui.cfg = state.config || {};
+    const series = pick ? null : seriesOf(rec);
+    const parent = pick ? preset : (series && series.confluence_parent);
     await detectProxy();
+    $('cfModalTitle').textContent = pick ? 'Choisir la page Confluence de la série' : 'Publier le compte rendu dans Confluence';
+    $('cfActionBlock').classList.toggle('hidden', pick);
+    $('cfOptionsBlock').classList.toggle('hidden', pick);
     $('cfNotConfigured').classList.toggle('hidden', isConfigured(ui.cfg));
     $('cfMain').classList.toggle('hidden', !isConfigured(ui.cfg));
     $('cfPublishBtn').classList.toggle('hidden', !isConfigured(ui.cfg));
-    $('cfNoSummary').classList.toggle('hidden', !!rec.summary);
-    $('cfTitle').value = rec.title || 'Compte rendu';
-    document.querySelector('input[name="cfAction"][value="create"]').checked = true;
+    $('cfNoSummary').classList.toggle('hidden', pick || !!rec.summary);
+    if (!pick) {
+      const date = new Date(rec.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+      $('cfTitle').value = series ? `${series.name} — ${date}` : (rec.title || 'Compte rendu');
+      document.querySelector('input[name="cfAction"][value="create"]').checked = true;
+    }
     updateActionUI();
-    setStatus('');
+    setStatus(parent && !pick ? `Série « ${escapeHtml(series.name)} » : publication sous sa page « ${escapeHtml(parent.title || parent.id)} ».` : '');
     modal(true);
     if (!isConfigured(ui.cfg)) return;
 
     $('cfSpaceSelect').innerHTML = '<option>Chargement des espaces…</option>';
     try {
       ui.spaces = await api.spaces(ui.cfg);
-      const lastKey = ui.cfg.confluence_last_space;
-      ui.spaceKey = ui.spaces.some(s => s.key === lastKey) ? lastKey : (ui.spaces[0] && ui.spaces[0].key) || '';
+      const preferred = parent ? parent.spaceKey : ui.cfg.confluence_last_space;
+      ui.spaceKey = ui.spaces.some(s => s.key === preferred) ? preferred : (ui.spaces[0] && ui.spaces[0].key) || '';
       $('cfSpaceFilter').value = '';
       renderSpaces();
       await changeSpace(ui.spaceKey);
+      if (parent && parent.spaceKey === ui.spaceKey) selectTarget({ id: parent.id, title: parent.title || parent.id });
+      else if (parent && !pick) setStatus("La page de la série n'est plus accessible (espace introuvable) : choisissez un emplacement.", 'err');
     } catch (err) {
       $('cfSpaceSelect').innerHTML = '';
       setStatus(escapeHtml(err.message), 'err');
     }
   }
 
+  /** Choix d'une page parente ; résout { spaceKey, id, title } ou null si la fenêtre est fermée. */
+  function pickLocation(preset) {
+    return new Promise(resolve => {
+      ui.pickResolve = resolve;
+      open({ pick: true, preset });
+    });
+  }
+
   async function publish() {
+    if (ui.mode === 'pick') {
+      if (!ui.target) { setStatus("Choisissez une page (pas la racine de l'espace).", 'err'); return; }
+      const picked = { spaceKey: ui.spaceKey, id: ui.target.id, title: ui.target.title };
+      const resolve = ui.pickResolve;
+      ui.pickResolve = null;
+      modal(false);
+      if (resolve) resolve(picked);
+      return;
+    }
     const rec = state.activeRecording;
     if (!rec || !ui.spaceKey) return;
     const action = document.querySelector('input[name="cfAction"]:checked').value;
@@ -493,7 +531,7 @@
         page = await api.createPage(ui.cfg, { spaceKey: ui.spaceKey, parentId: ui.target && ui.target.id, title, storage });
       }
       if ($('cfAddLabels').checked) {
-        try { await api.addLabels(ui.cfg, page.id, labelsFor(rec)); } catch (err) { console.warn('[Confluence] étiquettes', err); }
+        try { await api.addLabels(ui.cfg, page.id, labelsFor(rec, seriesOf(rec))); } catch (err) { console.warn('[Confluence] étiquettes', err); }
       }
 
       // Transcription en pièce jointe, puis vérification auprès de Confluence
@@ -519,6 +557,11 @@
       Object.assign(state.config, memo);
 
       const url = pageUrl(page);
+      if (url) {
+        // Lien repris dans l'e-mail aux participants
+        await fetch(`/api/recordings/${rec.id}/confluence`, { method: 'POST', body: JSON.stringify({ url, title: page.title }) });
+        rec.confluence_page = { url, title: page.title };
+      }
       setStatus(`✓ Page ${action === 'update' ? 'mise à jour' : 'créée'} : <strong>${escapeHtml(page.title)}</strong>` +
         (url ? ` — <a href="${escapeHtml(url)}" target="_blank" rel="noopener" class="underline text-indigo-300">Ouvrir dans Confluence ↗</a>` : '') + attachNote, 'ok');
       showToast(action === 'update' ? 'Page Confluence mise à jour !' : 'Compte rendu publié dans Confluence !', '📘');
@@ -533,11 +576,15 @@
     $('confluenceAuth').addEventListener('change', updateAuthUI);
     $('confluenceTestBtn').addEventListener('click', testSettings);
 
-    $('publishConfluenceBtn').addEventListener('click', open);
-    $('cfCloseBtn').addEventListener('click', () => modal(false));
-    $('cfCancelBtn').addEventListener('click', () => modal(false));
-    $('confluenceModal').addEventListener('click', (e) => { if (e.target.id === 'confluenceModal') modal(false); });
-    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') modal(false); });
+    $('publishConfluenceBtn').addEventListener('click', () => open());
+    const close = () => {
+      if (!$('confluenceModal').classList.contains('hidden') || ui.pickResolve) modal(false);
+      if (ui.pickResolve) { const r = ui.pickResolve; ui.pickResolve = null; r(null); }
+    };
+    $('cfCloseBtn').addEventListener('click', close);
+    $('cfCancelBtn').addEventListener('click', close);
+    $('confluenceModal').addEventListener('click', (e) => { if (e.target.id === 'confluenceModal') close(); });
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('confluenceModal').classList.contains('hidden')) close(); });
     $('cfOpenSettingsBtn').addEventListener('click', () => { modal(false); openSettingsModal(); $('confluenceSettings').scrollIntoView({ block: 'start' }); });
 
     $('cfSpaceFilter').addEventListener('input', (e) => renderSpaces(e.target.value));
@@ -557,6 +604,6 @@
     $('cfPublishBtn').addEventListener('click', publish);
   }
 
-  window.VoxConfluence = { readSettings, fillSettings, buildStorage, labelsFor, transcriptText, transcriptFileName, api };
+  window.VoxConfluence = { readSettings, fillSettings, buildStorage, labelsFor, transcriptText, transcriptFileName, pickLocation, isConfigured: () => isConfigured(state.config || {}), api };
   document.addEventListener('DOMContentLoaded', setup);
 })();

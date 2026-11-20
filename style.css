@@ -657,3 +657,10 @@ mark.search-hit { background: rgba(250, 204, 21, 0.35); color: inherit; border-r
 @media (min-width: 900px) {
   body.assistant-open #toast { right: 472px; }
 }
+
+/* Séries de réunions */
+.series-item { display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; padding: 8px 10px; border-radius: 12px; font-size: 12px; color: #e2e8f0; border: 1px solid transparent; transition: background 0.15s; }
+.series-item:hover { background: rgba(255, 255, 255, 0.05); }
+.series-item-active { background: rgba(99, 102, 241, 0.14); border-color: rgba(99, 102, 241, 0.35); }
+:root[data-theme="light"] .series-item { color: #0f172a; }
+:root[data-theme="light"] .series-item:hover { background: rgba(15, 23, 42, 0.05); }
