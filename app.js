@@ -755,6 +755,7 @@ async function loadRecordings() {
     const res = await fetch('/api/recordings');
     state.recordings = await res.json();
     renderRecordingsList();
+    checkBackupReminder();
     updateAssistantContext();
   } catch (err) {
     console.error('Erreur chargement recordings:', err);
@@ -978,7 +979,7 @@ function renderSummaryTab(summary) {
           <span class="task-text text-slate-200 block">${escapeHtml(a.task)}${refChips(a.refs)}</span>
           <div class="flex items-center gap-2 mt-1 text-[10px] text-slate-400">
             <span class="px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">👤 ${escapeHtml(a.assignee || 'Tous')}</span>
-            ${a.deadline ? `<span class="px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">📅 ${escapeHtml(a.deadline)}</span>` : ''}
+            ${deadlineChips(a.deadline, a.status)}
           </div>
         </div>
       </label>
@@ -999,6 +1000,37 @@ function renderSummaryTab(summary) {
 
   // Suivi des actions des réunions précédentes (séries, phase 2)
   if (window.VoxSeries) VoxSeries.renderFollowup();
+}
+
+/**
+ * Échéance d'une action : date AAAA-MM-JJ (analyses récentes) mise en forme et repérée en retard,
+ * ou texte libre (anciennes analyses, « À définir ») affiché tel quel.
+ */
+function deadlineInfo(deadline, status) {
+  const raw = String(deadline || '').trim();
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const date = m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+  // Date inexistante (31 février…) : affichée telle quelle, jamais reportée au mois suivant
+  if (!date || isNaN(date) || date.getMonth() !== Number(m[2]) - 1 || date.getDate() !== Number(m[3])) {
+    return { label: raw, long: raw, overdue: false, iso: '' };
+  }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const sameYear = date.getFullYear() === today.getFullYear();
+  return {
+    label: date.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) }),
+    long: date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+    overdue: status !== 'done' && date < today,
+    iso: raw
+  };
+}
+
+/** Pastilles d'échéance (HTML) : date, et « En retard » si elle est dépassée. */
+function deadlineChips(deadline, status) {
+  const d = deadlineInfo(deadline, status);
+  if (!d.label) return '';
+  return `<span class="px-1.5 py-0.5 rounded bg-slate-700 text-slate-300" ${d.iso ? `title="${escapeHtml(d.long)}"` : ''}>📅 ${escapeHtml(d.label)}</span>` +
+    (d.overdue ? '<span class="deadline-overdue">⏰ En retard</span>' : '');
 }
 
 // Un élément de synthèse est soit une chaîne (anciennes analyses), soit { text, refs }
@@ -1962,7 +1994,7 @@ function buildSummaryMarkdown(rec) {
 
     if (s.action_items && s.action_items.length) {
       md += `## ✅ Plan d'Action\n`;
-      s.action_items.forEach(a => md += `- [${a.status === 'done' ? 'x' : ' '}] **${a.task}** (Assigné : ${a.assignee || 'Tous'}, Échéance : ${a.deadline || 'N/A'})\n`);
+      s.action_items.forEach(a => md += `- [${a.status === 'done' ? 'x' : ' '}] **${a.task}** (Assigné : ${a.assignee || 'Tous'}, Échéance : ${deadlineInfo(a.deadline).long || 'N/A'})\n`);
       md += `\n`;
     }
 
@@ -2062,10 +2094,47 @@ async function refreshBackupInfo() {
   el.textContent = `${count} enregistrement${count > 1 ? 's' : ''}${usage}`;
 }
 
+// ----------------------------------------------------------------------------
+// Rappel de sauvegarde : toutes les données (réunions, séries, suivi des actions)
+// ne vivent que dans ce navigateur. Rappel après 7 jours sans sauvegarde .voxai.
+// ----------------------------------------------------------------------------
+const BACKUP_KEY = 'voxai_last_backup';
+const BACKUP_SNOOZE_KEY = 'voxai_backup_snooze';
+const BACKUP_EVERY_DAYS = 7;
+const BACKUP_SNOOZE_DAYS = 3;
+const DAY_MS = 86400000;
+function lsGet(k) { try { return localStorage.getItem(k) || ''; } catch { return ''; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch { /* stockage indisponible */ } }
+
+function checkBackupReminder() {
+  const box = document.getElementById('backupReminder');
+  if (!box) return;
+  const recs = state.recordings || [];
+  const now = Date.now();
+  const last = Date.parse(lsGet(BACKUP_KEY));
+  const snoozed = Date.parse(lsGet(BACKUP_SNOOZE_KEY));
+  // Sans sauvegarde : on compte depuis le plus ancien enregistrement
+  const oldest = recs.reduce((min, r) => Math.min(min, Date.parse(r.created_at) || now), now);
+  const since = isNaN(last) ? oldest : last;
+  const days = Math.floor((now - since) / DAY_MS);
+  const show = recs.length > 0 && days >= BACKUP_EVERY_DAYS && !(snoozed > now);
+  box.classList.toggle('hidden', !show);
+  if (!show) return;
+  document.getElementById('backupReminderText').textContent = isNaN(last)
+    ? `Aucune sauvegarde : vos ${recs.length} enregistrement(s), séries et actions n'existent que dans ce navigateur. Un fichier .voxai les protège si le navigateur est vidé ou si vous changez de poste.`
+    : `Dernière sauvegarde il y a ${days} jours. Un fichier .voxai protège vos réunions, séries et actions si le navigateur est vidé ou si vous changez de poste.`;
+}
+
 function setupBackup() {
   const exportBtn = document.getElementById('backupExportBtn');
   const importInput = document.getElementById('backupImportInput');
   if (!exportBtn || !importInput) return;
+
+  document.getElementById('backupReminderSave').addEventListener('click', () => exportBtn.click());
+  document.getElementById('backupReminderLater').addEventListener('click', () => {
+    lsSet(BACKUP_SNOOZE_KEY, new Date(Date.now() + BACKUP_SNOOZE_DAYS * DAY_MS).toISOString());
+    checkBackupReminder();
+  });
 
   exportBtn.addEventListener('click', async () => {
     exportBtn.disabled = true;
@@ -2079,6 +2148,8 @@ function setupBackup() {
       a.remove();
       setTimeout(() => URL.revokeObjectURL(a.href), 30000);
       showToast(`Sauvegarde créée : ${recordings} enregistrement${recordings > 1 ? 's' : ''} (${formatBytes(blob.size)})`, '💾');
+      lsSet(BACKUP_KEY, new Date().toISOString());
+      checkBackupReminder();
     } catch (err) {
       showToast('Erreur de sauvegarde : ' + err.message, '⚠️');
     } finally {

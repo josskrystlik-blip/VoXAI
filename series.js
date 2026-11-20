@@ -79,6 +79,12 @@
     const send = $('sendParticipantsBtn');
     send.classList.toggle('hidden', !series || series.participants.length === 0);
     if (series) send.title = `Envoyer le compte rendu aux ${series.participants.length} participant(s) de « ${series.name} »`;
+    // « Publier et envoyer » : série avec page Confluence et participants, Confluence configuré
+    const both = $('publishSendBtn');
+    if (both) {
+      both.classList.toggle('hidden', !(series && series.confluence_parent && series.participants.length
+        && window.VoxConfluence && VoxConfluence.isConfigured()));
+    }
   }
 
   // ==========================================================================
@@ -95,7 +101,7 @@
     if (decisions.length) lines.push('**Décisions**', ...decisions.map(d => `- ${d}`), '');
     const actions = (s.action_items || []).filter(a => a && a.task);
     if (actions.length) {
-      lines.push('**Actions**', ...actions.map(a => `- ${a.status === 'done' ? '[fait] ' : ''}${a.task}${a.assignee ? ` — ${a.assignee}` : ''}${a.deadline ? ` (${a.deadline})` : ''}`), '');
+      lines.push('**Actions**', ...actions.map(a => `- ${a.status === 'done' ? '[fait] ' : ''}${a.task}${a.assignee ? ` — ${a.assignee}` : ''}${a.deadline ? ` (${deadlineInfo(a.deadline).long})` : ''}`), '');
     }
     const followup = (s.action_followup || []).filter(f => f && f.task);
     if (followup.length) {
@@ -362,7 +368,8 @@
     const { actions, meetings } = F.data;
     const showDone = $('followShowDone').checked;
     const open = actions.filter(a => a.status !== 'done');
-    $('followOpenCount').textContent = `(${open.length})`;
+    const late = open.filter(a => deadlineInfo(a.deadline, a.status).overdue).length;
+    $('followOpenCount').textContent = `(${open.length}${late ? ` · ${late} en retard` : ''})`;
     const visible = showDone ? actions : open;
     if (!visible.length) {
       $('followActionsList').innerHTML = `<p class="text-xs text-slate-400 italic">${meetings.length ? 'Aucune action ouverte : tout est à jour 🎉' : 'Aucune réunion dans cette série pour l’instant.'}</p>`;
@@ -385,7 +392,7 @@
                 <span class="follow-task text-slate-200">${escapeHtml(a.task)}</span>
                 <div class="flex flex-wrap items-center gap-2 mt-1 text-[10px] text-slate-400">
                   <span>👤 ${escapeHtml(a.assignee || 'Non assigné')}</span>
-                  ${a.deadline ? `<span>📅 ${escapeHtml(a.deadline)}</span>` : ''}
+                  ${deadlineChips(a.deadline, a.status)}
                 </div>
                 ${followupLine(a.followup)}
               </div>
@@ -412,11 +419,15 @@
     }
     if (open.length) {
       lines.push(`**Actions ouvertes (${open.length})**`);
-      // Triées par responsable, puis de la plus ancienne à la plus récente
+      // En retard d'abord, puis par responsable, puis de la plus ancienne à la plus récente
       const owner = (a) => a.assignee || 'Non assigné';
-      const sorted = [...open].sort((x, y) => owner(x).localeCompare(owner(y), 'fr') || x.meeting_date.localeCompare(y.meeting_date));
+      const late = (a) => (deadlineInfo(a.deadline, a.status).overdue ? 0 : 1);
+      const sorted = [...open].sort((x, y) => late(x) - late(y) || owner(x).localeCompare(owner(y), 'fr') || x.meeting_date.localeCompare(y.meeting_date));
+      const lateCount = open.filter(a => !late(a)).length;
+      if (lateCount) lines.push(`⏰ ${lateCount} action(s) en retard.`);
       for (const a of sorted) {
-        const extra = [a.deadline ? `échéance ${a.deadline}` : '', `décidée le ${fmtDate(a.meeting_date)}`,
+        const d = deadlineInfo(a.deadline, a.status);
+        const extra = [d.long ? `échéance ${d.long}${d.overdue ? ', EN RETARD' : ''}` : '', `décidée le ${fmtDate(a.meeting_date)}`,
           a.followup ? (a.followup.status === 'done' ? 'signalée terminée, à confirmer' : 'en cours') : ''].filter(Boolean).join(', ');
         lines.push(`- **${owner(a)}** : ${a.task} (${extra})`);
       }
@@ -480,6 +491,19 @@
       showToast(rec.series_id ? `Rattaché à « ${get(rec.series_id).name} »` : 'Détaché de la série', '🗂️');
     });
     $('sendParticipantsBtn').addEventListener('click', sendToParticipants);
+    $('publishSendBtn').addEventListener('click', () => {
+      const rec = state.activeRecording;
+      if (!rec || !rec.summary) { showToast("Analysez d'abord l'enregistrement : le compte rendu est vide.", '⚠️'); return; }
+      // L'e-mail part après la publication, avec le lien de la page qui vient d'être créée
+      VoxConfluence.open({
+        after: () => {
+          const target = getMailTarget();
+          if (target === 'web' || target === 'gmail') return { label: '✉️ Créer l’e-mail aux participants', run: sendToParticipants };
+          sendToParticipants(); // Outlook (fichier .eml) ou messagerie par défaut : ouverture directe
+          return null;
+        }
+      });
+    });
 
     $('seriesCloseBtn').addEventListener('click', () => modal(false));
     $('seriesModal').addEventListener('click', (e) => { if (e.target.id === 'seriesModal') modal(false); });

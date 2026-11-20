@@ -194,13 +194,14 @@ Pour une réunion récurrente (« Point projet Alpha — hebdo ») enregistrée 
 
 1. **🗂️ Séries → Nouvelle série** : nom, type (point d'équipe hebdo, comité de pilotage), participants (noms et adresses e-mail) et page Confluence de la série, choisie dans l'arborescence.
 2. Choisir la série sur l'écran d'enregistrement (ou à l'import) : le titre devient « <série> — <date> », les noms des participants aident l'IA à nommer les orateurs, et un nom corrigé une fois (« Marco » → « Bob ») est reconnu aux réunions suivantes.
-3. Après la réunion, deux clics : **📘 Confluence** (publication préremplie sous la page de la série, avec l'étiquette de la série) puis **✉️ Envoyer aux participants** (e-mail dans Outlook, Outlook Web, Gmail ou la messagerie par défaut, destinataires préremplis, lien vers la page Confluence).
+3. Après la réunion, un clic sur **🚀 Publier et envoyer** : publication préremplie sous la page Confluence de la série (avec son étiquette), puis e-mail aux participants avec le lien de la page (Outlook, Outlook Web, Gmail ou messagerie par défaut, destinataires préremplis). Les boutons **📘 Confluence** et **✉️ Envoyer aux participants** restent disponibles séparément.
 
 La liste des enregistrements se filtre par série ; un enregistrement se rattache ou se détache depuis sa page. Les séries sont incluses dans la sauvegarde `.voxai`. Supprimer une série conserve ses enregistrements.
 
 ### 📌 Suivi des actions d'une réunion à l'autre
 
 - **À l'analyse** d'une réunion d'une série, l'IA reçoit les actions encore ouvertes des réunions précédentes et indique celles dont il a été question (**terminée** ou **en cours**, avec ce qui en a été dit et un lien vers le passage de la transcription). Le bloc **🔁 Suivi des actions précédentes** de la synthèse les affiche : rien n'est clôturé sans votre clic sur **Clôturer**. Ce suivi figure aussi dans la page Confluence, l'e-mail aux participants et l'export.
+- **Échéances datées** : l'IA convertit « vendredi » ou « fin du mois » en date, à partir de la date de la réunion. Une action dont l'échéance est dépassée porte le badge **⏰ En retard**, dans la synthèse, la fenêtre de suivi et le brief.
 - **📌 Suivi** (barre latérale) : toutes les **actions ouvertes** de la série, regroupées par réunion, à cocher directement, avec leur dernier point d'avancement.
 - **Brief de la prochaine réunion** : rappel de la dernière réunion (résumé, décisions) et actions ouvertes par responsable, à **copier** ou à **envoyer aux participants**. Il est construit localement, sans IA.
 
@@ -215,7 +216,7 @@ La liste des enregistrements se filtre par série ; un enregistrement se rattach
 - **Recherche dans la transcription** : sans tenir compte des accents ni des majuscules, avec surlignage et nombre d'occurrences ; le nom d'un orateur fonctionne aussi.
 - **Télécharger l'audio** : bouton ⬇️ dans le lecteur, pour récupérer l'enregistrement (ou la piste en cours pour une session à plusieurs fichiers).
 - **Plan d'action** : les actions cochées sont enregistrées et reprises dans les copies et dans Confluence (tâches terminées).
-- **💾 Sauvegarde** (⚙️ Paramètres) : les données vivent dans le navigateur. **Exporter mes données** crée un fichier `.voxai` (audios, transcriptions, comptes rendus, discussions) ; **Restaurer une sauvegarde** le réimporte ici ou sur un autre poste (les enregistrements déjà présents sont ignorés).
+- **💾 Sauvegarde** (⚙️ Paramètres) : les données vivent dans le navigateur. Un rappel s'affiche dans la barre latérale après 7 jours sans sauvegarde (« Plus tard » le repousse de 3 jours). **Exporter mes données** crée un fichier `.voxai` (audios, transcriptions, comptes rendus, discussions) ; **Restaurer une sauvegarde** le réimporte ici ou sur un autre poste (les enregistrements déjà présents sont ignorés).
 
 ## 🎙️ Transcription en direct & e-mail de compte rendu
 
