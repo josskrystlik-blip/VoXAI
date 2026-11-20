@@ -53,6 +53,7 @@
 
   async function request(cfg, method, path, body) {
     const base = await apiBase(cfg);
+    const isForm = body instanceof FormData; // pièce jointe : multipart, en-tête posé par le navigateur
     let res;
     try {
       res = await fetch(base + path, {
@@ -61,9 +62,9 @@
           Accept: 'application/json',
           Authorization: authHeader(cfg),
           'X-Atlassian-Token': 'no-check',
-          ...(body ? { 'Content-Type': 'application/json' } : {})
+          ...(body && !isForm ? { 'Content-Type': 'application/json' } : {})
         },
-        body: body ? JSON.stringify(body) : undefined,
+        body: body ? (isForm ? body : JSON.stringify(body)) : undefined,
         credentials: 'omit'
       });
     } catch (err) {
@@ -72,14 +73,14 @@
         : `Confluence injoignable (${err.message}). Le serveur bloque probablement les appels venant de ${location.origin} (CORS) : utilisez l'image Docker avec CONFLUENCE_URL, ou demandez à l'administrateur d'autoriser cette origine.`);
     }
     if (res.status === 401 || res.status === 403) {
-      throw new Error(`Accès refusé par Confluence (HTTP ${res.status}) : vérifiez le jeton et vos droits sur l'espace.`);
+      throw Object.assign(new Error(`Accès refusé par Confluence (HTTP ${res.status}) : vérifiez le jeton et vos droits sur l'espace.`), { status: res.status });
     }
     const text = await res.text();
     let data = null;
     try { data = text ? JSON.parse(text) : null; } catch { /* réponse non JSON */ }
     if (!res.ok) {
       const msg = (data && (data.message || (data.data && data.data.errors && data.data.errors[0] && data.data.errors[0].message && data.data.errors[0].message.translation))) || text.slice(0, 300);
-      throw new Error(`Confluence (HTTP ${res.status}) : ${msg}`);
+      throw Object.assign(new Error(`Confluence (HTTP ${res.status}) : ${msg}`), { status: res.status });
     }
     return data;
   }
@@ -148,6 +149,32 @@
       });
     },
 
+    async attachments(cfg, pageId, filename) {
+      const res = await request(cfg, 'GET', `/content/${enc(pageId)}/child/attachment?filename=${enc(filename)}&expand=version`);
+      return (res && res.results) || [];
+    },
+
+    /** Ajoute la pièce jointe, ou en crée une nouvelle version si un fichier du même nom existe déjà. */
+    async uploadAttachment(cfg, pageId, filename, blob, comment) {
+      const form = () => {
+        const f = new FormData();
+        f.append('file', blob, filename);
+        f.append('comment', comment);
+        f.append('minorEdit', 'true');
+        return f;
+      };
+      try {
+        // Créer ou mettre à jour en un appel (Confluence Server / Data Center et Cloud)
+        return await request(cfg, 'PUT', `/content/${enc(pageId)}/child/attachment`, form());
+      } catch (err) {
+        if (![404, 405].includes(err.status)) throw err;
+        const [existing] = await api.attachments(cfg, pageId, filename);
+        return existing
+          ? request(cfg, 'POST', `/content/${enc(pageId)}/child/attachment/${enc(existing.id)}/data`, form())
+          : request(cfg, 'POST', `/content/${enc(pageId)}/child/attachment`, form());
+      }
+    },
+
     async addLabels(cfg, id, labels) {
       if (!labels.length) return;
       await request(cfg, 'POST', `/content/${enc(id)}/label`, labels.map(name => ({ prefix: 'global', name })));
@@ -168,7 +195,29 @@
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
-  function buildStorage(rec, { includeTranscript = true } = {}) {
+  function transcriptFileName(rec) {
+    return `Transcription - ${safeFileName(rec.title, 'Enregistrement')}.txt`;
+  }
+
+  /** Transcription intégrale en texte brut (pièce jointe). */
+  function transcriptText(rec) {
+    const multi = rec.files && rec.files.length > 1;
+    const date = new Date(rec.created_at).toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' });
+    const head = [
+      `Transcription intégrale — ${rec.title}`,
+      `Enregistrement du ${date}, durée ${formatDuration(rec.duration || 0)}`,
+      ...(multi ? [`Fichiers audio : ${rec.files.map((f, i) => `piste ${i + 1} = ${f.original_name}`).join(' ; ')}`] : []),
+      'Générée par VoxAI.',
+      ''
+    ];
+    const lines = (Array.isArray(rec.transcription) ? rec.transcription : []).map(t => {
+      const ts = multi ? `Piste ${t.file_index || 1} • ${t.timestamp || '00:00'}` : (t.timestamp || '00:00');
+      return `[${ts}] ${t.speaker || 'Orateur'} : ${t.text || ''}`;
+    });
+    return '\ufeff' + [...head, ...lines].join('\r\n') + '\r\n'; // BOM + CRLF : lisible tel quel sous Windows
+  }
+
+  function buildStorage(rec, { includeTranscript = true, attachTranscript = false } = {}) {
     const s = rec.summary || {};
     const text = (it) => (it && typeof it === 'object') ? (it.text || '') : String(it ?? '');
     const date = new Date(rec.created_at).toLocaleString('fr-FR', { dateStyle: 'long', timeStyle: 'short' });
@@ -192,6 +241,9 @@
     if (keyPoints.length) h += `<h2>Points clés</h2><ul>${keyPoints.map(k => `<li>${x(text(k))}</li>`).join('')}</ul>`;
 
     const transcription = Array.isArray(rec.transcription) ? rec.transcription : [];
+    if (attachTranscript && transcription.length) {
+      h += `<p>📎 Transcription intégrale en pièce jointe : <ac:link><ri:attachment ri:filename="${x(transcriptFileName(rec))}" /></ac:link></p>`;
+    }
     if (includeTranscript && transcription.length) {
       const lines = transcription.map(t => {
         const ts = multi ? `Piste ${t.file_index || 1} • ${t.timestamp || '00:00'}` : (t.timestamp || '00:00');
@@ -422,7 +474,9 @@
     const rec = state.activeRecording;
     if (!rec || !ui.spaceKey) return;
     const action = document.querySelector('input[name="cfAction"]:checked').value;
-    const storage = buildStorage(rec, { includeTranscript: $('cfIncludeTranscript').checked });
+    const hasTranscript = Array.isArray(rec.transcription) && rec.transcription.length > 0;
+    const attach = $('cfAttachTranscript').checked && hasTranscript;
+    const storage = buildStorage(rec, { includeTranscript: $('cfIncludeTranscript').checked, attachTranscript: attach });
     const btn = $('cfPublishBtn');
     btn.disabled = true;
     setStatus('Publication en cours…', 'busy');
@@ -440,6 +494,24 @@
       if ($('cfAddLabels').checked) {
         try { await api.addLabels(ui.cfg, page.id, labelsFor(rec)); } catch (err) { console.warn('[Confluence] étiquettes', err); }
       }
+
+      // Transcription en pièce jointe, puis vérification auprès de Confluence
+      let attachNote = '';
+      if (attach) {
+        const name = transcriptFileName(rec);
+        const blob = new Blob([transcriptText(rec)], { type: 'text/plain;charset=utf-8' });
+        setStatus('Page publiée — envoi de la transcription en pièce jointe…', 'busy');
+        try {
+          await api.uploadAttachment(ui.cfg, page.id, name, blob, 'Transcription intégrale (VoxAI)');
+          const [stored] = await api.attachments(ui.cfg, page.id, name);
+          const size = stored && stored.extensions && stored.extensions.fileSize;
+          if (!stored) throw new Error('fichier absent de la page après envoi');
+          if (size != null && Number(size) !== blob.size) throw new Error(`taille reçue ${size} octets au lieu de ${blob.size}`);
+          attachNote = `<br>📎 Transcription jointe et vérifiée : <strong>${escapeHtml(name)}</strong> (${formatBytes(blob.size)})`;
+        } catch (err) {
+          attachNote = `<br><span class="text-amber-300">⚠️ La page est publiée, mais la transcription n'a pas pu être jointe : ${escapeHtml(err.message)}. Republiez en « Mettre à jour la page » pour réessayer.</span>`;
+        }
+      }
       // Mémorise l'emplacement pour la prochaine publication
       const memo = { confluence_last_space: ui.spaceKey, confluence_last_parent: ui.target ? { ...ui.target, spaceKey: ui.spaceKey } : null };
       await fetch('/api/config', { method: 'POST', body: JSON.stringify(memo) });
@@ -447,7 +519,7 @@
 
       const url = pageUrl(page);
       setStatus(`✓ Page ${action === 'update' ? 'mise à jour' : 'créée'} : <strong>${escapeHtml(page.title)}</strong>` +
-        (url ? ` — <a href="${escapeHtml(url)}" target="_blank" rel="noopener" class="underline text-indigo-300">Ouvrir dans Confluence ↗</a>` : ''), 'ok');
+        (url ? ` — <a href="${escapeHtml(url)}" target="_blank" rel="noopener" class="underline text-indigo-300">Ouvrir dans Confluence ↗</a>` : '') + attachNote, 'ok');
       showToast(action === 'update' ? 'Page Confluence mise à jour !' : 'Compte rendu publié dans Confluence !', '📘');
     } catch (err) {
       setStatus(escapeHtml(err.message), 'err');
@@ -484,6 +556,6 @@
     $('cfPublishBtn').addEventListener('click', publish);
   }
 
-  window.VoxConfluence = { readSettings, fillSettings, buildStorage, labelsFor, api };
+  window.VoxConfluence = { readSettings, fillSettings, buildStorage, labelsFor, transcriptText, transcriptFileName, api };
   document.addEventListener('DOMContentLoaded', setup);
 })();
