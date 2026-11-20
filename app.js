@@ -210,6 +210,7 @@ function applyCloudPolicyUI() {
 function openSettingsModal() {
   if (!state.config) return;
   applyCloudPolicyUI();
+  refreshBackupInfo();
   state.modalProvider = (cloudDisabled() || state.config.provider === 'local' || state.config.provider === 'on_prem') ? 'on_prem' : 'gemini';
   updateModalProviderUI();
   
@@ -451,7 +452,7 @@ function drawIdleWaveform() {
   ctx.beginPath();
   ctx.moveTo(0, h / 2);
   ctx.lineTo(w, h / 2);
-  ctx.strokeStyle = '#334155';
+  ctx.strokeStyle = document.documentElement.getAttribute('data-theme') === 'light' ? '#cbd5e1' : '#334155';
   ctx.lineWidth = 1.5;
   ctx.stroke();
 }
@@ -818,6 +819,7 @@ function selectAudioTrack(index) {
   if (!rec || !rec.files || !rec.files[index]) return;
   state.activeFileIndex = index;
   const file = rec.files[index];
+  updateDownloadAudioBtn();
 
   VoxLocal.audioUrl(file.filename).then(u => { if (state.activeFileIndex === index) elements.audioElement.src = u; });
   elements.playerCurrentTime.textContent = '00:00';
@@ -920,7 +922,11 @@ function renderRecordingDetails() {
   elements.playerPlayIcon.classList.remove('hidden');
   elements.playerPauseIcon.classList.add('hidden');
 
+  updateDownloadAudioBtn();
+
   // Render Tabs
+  const search = document.getElementById('searchTranscript');
+  if (search) search.value = '';
   renderSummaryTab(rec.summary);
   renderTranscriptTab(rec.transcription);
   renderChatTab(rec.chat_history || []);
@@ -959,9 +965,9 @@ function renderSummaryTab(summary) {
   if (actions.length > 0) {
     elements.summaryActions.innerHTML = actions.map((a, idx) => `
       <label class="flex items-start gap-2.5 bg-slate-800/40 p-2 rounded-lg border border-slate-700/40 cursor-pointer hover:bg-slate-800/70 transition">
-        <input type="checkbox" class="action-check mt-0.5 accent-indigo-500 rounded">
+        <input type="checkbox" class="action-check mt-0.5 accent-indigo-500 rounded" data-index="${idx}" ${a.status === 'done' ? 'checked' : ''}>
         <div class="flex-1">
-          <span class="text-slate-200 block">${escapeHtml(a.task)}${refChips(a.refs)}</span>
+          <span class="task-text text-slate-200 block">${escapeHtml(a.task)}${refChips(a.refs)}</span>
           <div class="flex items-center gap-2 mt-1 text-[10px] text-slate-400">
             <span class="px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">👤 ${escapeHtml(a.assignee || 'Tous')}</span>
             ${a.deadline ? `<span class="px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">📅 ${escapeHtml(a.deadline)}</span>` : ''}
@@ -1056,6 +1062,65 @@ async function renameSpeaker(oldName) {
   showToast(`« ${oldName} » renommé en « ${newName} »`, '✏️');
 }
 
+// ==============================================================================
+// Recherche dans la transcription (sans tenir compte des accents ni des majuscules)
+// ==============================================================================
+
+/** Texte « replié » (minuscules, sans accents) + correspondance vers les positions d'origine. */
+function foldWithMap(text) {
+  let folded = '';
+  const map = [];
+  for (let i = 0; i < text.length; i++) {
+    const f = text[i].normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    for (let k = 0; k < f.length; k++) { folded += f[k]; map.push(i); }
+  }
+  map.push(text.length);
+  return { folded, map };
+}
+
+function highlightMatches(text, query) {
+  const q = foldWithMap(query.trim()).folded;
+  if (!q) return { html: escapeHtml(text), count: 0 };
+  const { folded, map } = foldWithMap(text);
+  let html = '', last = 0, count = 0, from = 0, idx;
+  while ((idx = folded.indexOf(q, from)) !== -1) {
+    const start = map[idx], end = map[idx + q.length];
+    html += escapeHtml(text.slice(last, start)) + `<mark class="search-hit">${escapeHtml(text.slice(start, end))}</mark>`;
+    last = end; from = idx + q.length; count++;
+  }
+  return { html: html + escapeHtml(text.slice(last)), count };
+}
+
+function applyTranscriptSearch() {
+  const input = document.getElementById('searchTranscript');
+  const info = document.getElementById('transcriptSearchInfo');
+  const rec = state.activeRecording;
+  const query = input ? input.value : '';
+  const segs = (rec && Array.isArray(rec.transcription)) ? rec.transcription : [];
+  let shown = 0, hits = 0;
+  segs.forEach((seg, idx) => {
+    const item = document.getElementById(`seg-${idx}`);
+    if (!item) return;
+    const textEl = item.querySelector('.seg-text');
+    const t = highlightMatches(seg.text || '', query);
+    const speakerHit = query.trim() && foldWithMap(seg.speaker || '').folded.includes(foldWithMap(query.trim()).folded);
+    if (textEl) textEl.innerHTML = t.html;
+    const match = !query.trim() || t.count > 0 || speakerHit;
+    item.classList.toggle('hidden', !match);
+    if (match) shown++;
+    hits += t.count;
+  });
+  if (info) {
+    info.textContent = query.trim()
+      ? (!shown ? 'Aucun résultat'
+        : hits ? `${hits} occurrence${hits > 1 ? 's' : ''} dans ${shown} passage${shown > 1 ? 's' : ''}`
+        : `${shown} passage${shown > 1 ? 's' : ''} (orateur)`)
+      : '';
+  }
+  const first = query.trim() && elements.transcriptTimeline.querySelector('.search-hit');
+  if (first) first.scrollIntoView({ block: 'nearest' });
+}
+
 function renderSpeakersBar(transcription) {
   const bar = elements.speakersBar;
   if (!bar) return;
@@ -1120,7 +1185,7 @@ function renderTranscriptTab(transcription) {
           <button type="button" class="speaker-name-btn text-xs font-semibold text-slate-300 hover:text-indigo-300 transition" title="Cliquer pour renommer cet orateur">${speakerName}</button>
           ${isMultiTrack ? `<span class="text-[10px] text-indigo-400/80 italic">• ${fileName}</span>` : ''}
         </div>
-        <p class="text-xs text-slate-200 leading-relaxed">${text}</p>
+        <p class="seg-text text-xs text-slate-200 leading-relaxed">${text}</p>
       </div>
     `;
 
@@ -1144,6 +1209,7 @@ function renderTranscriptTab(transcription) {
 
     container.appendChild(item);
   });
+  applyTranscriptSearch();
 }
 
 function renderChatTab(history) {
@@ -1311,15 +1377,59 @@ function buildEml(email) {
   ].join('\r\n');
 }
 
+/** Nom de fichier en ASCII (accents et tirets typographiques mal gérés par certains navigateurs). */
+function safeFileName(text, fallback = 'fichier') {
+  const name = String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u2010-\u2015]/g, '-').replace(/[^\x20-\x7e]/g, '')
+    .replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+  return name || fallback;
+}
+
+// ==============================================================================
+// Téléchargement de l'enregistrement audio (piste en cours de lecture)
+// ==============================================================================
+
+function updateDownloadAudioBtn() {
+  const btn = document.getElementById('downloadAudioBtn');
+  const rec = state.activeRecording;
+  if (!btn || !rec) return;
+  const files = rec.files || [];
+  const multi = files.length > 1;
+  btn.title = multi
+    ? `Télécharger la piste ${state.activeFileIndex + 1} sur ${files.length} (choisissez une autre piste pour la télécharger)`
+    : "Télécharger l'enregistrement audio";
+  btn.querySelector('span').textContent = multi ? `Piste ${state.activeFileIndex + 1}` : 'Audio';
+  btn.disabled = !files.length && !rec.filename;
+}
+
+async function downloadCurrentAudio() {
+  const rec = state.activeRecording;
+  if (!rec) return;
+  const files = rec.files || [];
+  const file = files[state.activeFileIndex] || files[0];
+  const filename = file ? file.filename : rec.filename;
+  const url = await VoxLocal.audioUrl(filename);
+  if (!url) {
+    showToast('Fichier audio introuvable dans ce navigateur', '⚠️');
+    return;
+  }
+  const ext = (String(filename).match(/\.[a-z0-9]{2,5}$/i) || ['.webm'])[0];
+  let name = safeFileName(rec.title, 'Enregistrement');
+  if (files.length > 1) name += ` - piste ${state.activeFileIndex + 1} - ${safeFileName(String(file.original_name || '').replace(/\.[^.]+$/, ''), 'audio')}`;
+  const a = document.createElement('a');
+  a.href = url; // URL locale (blob) réutilisée par le lecteur : rien ne sort du navigateur
+  a.download = `${name}${ext}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  showToast(`Téléchargement : ${a.download}`, '⬇️');
+}
+
 function downloadEml(email) {
   const blob = new Blob([buildEml(email)], { type: 'message/rfc822' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  // Nom de fichier en ASCII (accents et tirets typographiques mal gérés par certains navigateurs)
-  const safeName = email.subject.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[\u2010-\u2015]/g, '-').replace(/[^\x20-\x7e]/g, '')
-    .replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
-  a.download = `${safeName || 'Compte rendu'}.eml`;
+  a.download = `${safeFileName(email.subject, 'Compte rendu')}.eml`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -1604,7 +1714,7 @@ function buildSummaryMarkdown(rec) {
 
     if (s.action_items && s.action_items.length) {
       md += `## ✅ Plan d'Action\n`;
-      s.action_items.forEach(a => md += `- [ ] **${a.task}** (Assigné : ${a.assignee || 'Tous'}, Échéance : ${a.deadline || 'N/A'})\n`);
+      s.action_items.forEach(a => md += `- [${a.status === 'done' ? 'x' : ' '}] **${a.task}** (Assigné : ${a.assignee || 'Tous'}, Échéance : ${a.deadline || 'N/A'})\n`);
       md += `\n`;
     }
 
@@ -1648,6 +1758,93 @@ function exportAsMarkdown() {
 
   navigator.clipboard.writeText(md).then(() => {
     showToast('Synthèse complète copiée dans le presse-papier !', '📋');
+  });
+}
+
+// ==============================================================================
+// Apparence : automatique (selon le système), clair ou sombre
+// ==============================================================================
+
+const THEMES = {
+  auto: { icon: '🌓', label: 'Auto', title: 'Apparence : automatique (suit le réglage du système). Cliquer pour passer en clair.' },
+  light: { icon: '☀️', label: 'Clair', title: 'Apparence : fond clair. Cliquer pour passer en sombre.' },
+  dark: { icon: '🌙', label: 'Sombre', title: 'Apparence : fond sombre. Cliquer pour revenir en automatique.' }
+};
+
+function setupThemeToggle() {
+  const btn = document.getElementById('themeToggleBtn');
+  if (!btn || !window.VoxTheme) return;
+  const order = ['auto', 'light', 'dark'];
+  const refresh = () => {
+    const t = THEMES[VoxTheme.get()] || THEMES.auto;
+    document.getElementById('themeIcon').textContent = t.icon;
+    document.getElementById('themeLabel').textContent = t.label;
+    btn.title = t.title;
+    btn.setAttribute('aria-label', t.title);
+    if (!state.isRecording) drawIdleWaveform();
+  };
+  btn.addEventListener('click', () => {
+    const next = order[(order.indexOf(VoxTheme.get()) + 1) % order.length];
+    VoxTheme.set(next);
+    showToast(`Apparence : ${THEMES[next].label.toLowerCase()}`, THEMES[next].icon);
+  });
+  document.addEventListener('voxai:theme', refresh);
+  refresh();
+}
+
+// ==============================================================================
+// Sauvegarde et restauration (toutes les données restent dans ce navigateur)
+// ==============================================================================
+
+async function refreshBackupInfo() {
+  const el = document.getElementById('backupInfo');
+  if (!el) return;
+  const count = (state.recordings || []).length;
+  let usage = '';
+  try {
+    const est = navigator.storage && navigator.storage.estimate ? await navigator.storage.estimate() : null;
+    if (est && est.usage != null) usage = ` · ${formatBytes(est.usage)} utilisés dans ce navigateur`;
+  } catch { /* indisponible */ }
+  el.textContent = `${count} enregistrement${count > 1 ? 's' : ''}${usage}`;
+}
+
+function setupBackup() {
+  const exportBtn = document.getElementById('backupExportBtn');
+  const importInput = document.getElementById('backupImportInput');
+  if (!exportBtn || !importInput) return;
+
+  exportBtn.addEventListener('click', async () => {
+    exportBtn.disabled = true;
+    try {
+      const { blob, recordings } = await VoxLocal.exportBackup();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `voxai-sauvegarde-${new Date().toISOString().slice(0, 10)}.voxai`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+      showToast(`Sauvegarde créée : ${recordings} enregistrement${recordings > 1 ? 's' : ''} (${formatBytes(blob.size)})`, '💾');
+    } catch (err) {
+      showToast('Erreur de sauvegarde : ' + err.message, '⚠️');
+    } finally {
+      exportBtn.disabled = false;
+    }
+  });
+
+  importInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const { imported, skipped } = await VoxLocal.importBackup(file);
+      await loadRecordings();
+      refreshBackupInfo();
+      showToast(`${imported} enregistrement${imported > 1 ? 's' : ''} restauré${imported > 1 ? 's' : ''}` +
+        (skipped ? ` (${skipped} déjà présent${skipped > 1 ? 's' : ''}, ignoré${skipped > 1 ? 's' : ''})` : ''), '✅');
+    } catch (err) {
+      showToast('Restauration impossible : ' + err.message, '⚠️');
+    }
   });
 }
 
@@ -1758,6 +1955,30 @@ function setupEventListeners() {
   });
   elements.exportMarkdownBtn.addEventListener('click', exportAsMarkdown);
   elements.copyTranscriptBtn.addEventListener('click', copyTranscriptOnly);
+  document.getElementById('downloadAudioBtn').addEventListener('click', downloadCurrentAudio);
+
+  // Actions du plan cochées : enregistrées dans la base locale
+  elements.summaryActions.addEventListener('change', async (e) => {
+    const box = e.target.closest('.action-check');
+    const rec = state.activeRecording;
+    if (!box || !rec || !rec.summary) return;
+    const index = Number(box.dataset.index);
+    const res = await fetch(`/api/recordings/${rec.id}/actions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ index, done: box.checked })
+    });
+    if (res.ok) rec.summary.action_items[index].status = box.checked ? 'done' : 'todo';
+    else { box.checked = !box.checked; showToast("Impossible d'enregistrer l'action", '⚠️'); }
+  });
+
+  // Recherche dans la transcription
+  const search = document.getElementById('searchTranscript');
+  if (search) search.addEventListener('input', applyTranscriptSearch);
+
+  // Sauvegarde / restauration des données
+  setupBackup();
+  setupThemeToggle();
   elements.copySummaryBtn.addEventListener('click', copySummaryOnly);
   elements.tabContentSummary.addEventListener('click', (e) => {
     const chip = e.target.closest('.ref-chip');

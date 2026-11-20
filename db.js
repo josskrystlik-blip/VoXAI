@@ -774,6 +774,16 @@ Lorsqu'on te demande de rédiger un e-mail, réponds UNIQUEMENT avec l'e-mail : 
         }
       }
 
+      if (action === 'actions' && method === 'POST') {
+        const { index, done } = await req.json().catch(() => ({}));
+        const rec = await store.get('recordings', recId);
+        const items = rec && rec.summary && Array.isArray(rec.summary.action_items) ? rec.summary.action_items : null;
+        if (!items || !items[index]) return json(404, { error: 'Action introuvable' });
+        items[index] = { ...items[index], status: done ? 'done' : 'todo' };
+        await store.put('recordings', rec);
+        return json(200, { success: true });
+      }
+
       if (action === 'live' && method === 'POST') {
         const { text = '' } = await req.json().catch(() => ({}));
         const rec = await store.get('recordings', recId);
@@ -856,8 +866,70 @@ Lorsqu'on te demande de rédiger un e-mail, réponds UNIQUEMENT avec l'e-mail : 
   // Lecture audio : URL blob locale pour un fichier enregistré
   // ============================================================================
 
+  // ============================================================================
+  // Sauvegarde / restauration (fichier .voxai)
+  // Format : ligne « VOXAI-BACKUP 1 », ligne avec la taille du manifeste (octets),
+  // manifeste JSON (enregistrements, fichiers, discussions), puis les audios bout à bout.
+  // Le fichier est lu par tranches (Blob.slice) : pas de chargement complet en mémoire.
+  // ============================================================================
+
+  const BACKUP_MAGIC = 'VOXAI-BACKUP 1';
+
+  async function exportBackup() {
+    const [recordings, files, chat] = await Promise.all([store.all('recordings'), store.all('files'), store.all('chat')]);
+    let offset = 0;
+    const fileEntries = files.map(({ blob, id, ...meta }) => {
+      const entry = { ...meta, offset, size: blob.size, type: blob.type };
+      offset += blob.size;
+      return entry;
+    });
+    const manifest = JSON.stringify({
+      app: 'VoxAI', version: 1, exported_at: new Date().toISOString(),
+      recordings, files: fileEntries, chat: chat.map(({ id, ...m }) => m)
+    });
+    const manifestBytes = new TextEncoder().encode(manifest);
+    const blob = new Blob([`${BACKUP_MAGIC}\n${manifestBytes.length}\n`, manifestBytes, ...files.map(f => f.blob)],
+      { type: 'application/octet-stream' });
+    return { blob, recordings: recordings.length, files: files.length };
+  }
+
+  async function importBackup(file) {
+    const head = await file.slice(0, 64).text();
+    const lines = head.split('\n');
+    if (lines[0] !== BACKUP_MAGIC || !/^\d+$/.test(lines[1] || '')) {
+      throw new Error("Ce fichier n'est pas une sauvegarde VoxAI (.voxai).");
+    }
+    const start = lines[0].length + lines[1].length + 2;
+    const manifestLength = Number(lines[1]);
+    const manifest = JSON.parse(await file.slice(start, start + manifestLength).text());
+    const dataStart = start + manifestLength;
+
+    const existing = new Set((await store.all('recordings')).map(r => r.id));
+    const existingFiles = new Set((await store.all('files')).map(f => f.filename));
+    const toImport = (manifest.recordings || []).filter(r => r && r.id && !existing.has(r.id));
+    const ids = new Set(toImport.map(r => r.id));
+
+    await tx(['recordings', 'files', 'chat'], 'readwrite', async t => {
+      for (const rec of toImport) {
+        t.objectStore('recordings').put(rec.status === 'processing' ? { ...rec, status: 'recorded' } : rec);
+      }
+      for (const f of manifest.files || []) {
+        if (!ids.has(f.recording_id) || existingFiles.has(f.filename)) continue;
+        const { offset, size, type, ...meta } = f;
+        const blob = new Blob([file.slice(dataStart + offset, dataStart + offset + size)], { type: type || meta.mime_type });
+        t.objectStore('files').add({ ...meta, blob });
+      }
+      for (const m of manifest.chat || []) {
+        if (ids.has(m.recording_id)) t.objectStore('chat').add(m);
+      }
+    });
+    return { imported: toImport.length, skipped: (manifest.recordings || []).length - toImport.length };
+  }
+
   const blobUrls = new Map();
   window.VoxLocal = {
+    exportBackup,
+    importBackup,
     async audioUrl(filename) {
       if (!filename) return '';
       if (blobUrls.has(filename)) return blobUrls.get(filename);
