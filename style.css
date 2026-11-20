@@ -523,3 +523,83 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .stt-card { border: 1px solid rgba(255, 255, 255, 0.1); background: rgba(15, 23, 42, 0.4); color: #cbd5e1; }
 .stt-card:hover { background: rgba(15, 23, 42, 0.6); }
 .stt-card:has(input:checked) { border-color: rgba(168, 85, 247, 0.55); background: rgba(59, 7, 100, 0.25); color: #fff; }
+
+/* ==============================================================================
+   THÈME CLAIR — activé par data-theme="light" sur <html> (bouton ☀️/🌙 de l'en-tête).
+   Les classes Tailwind basculent via des variables (tailwind.config.js) ; ici, les
+   composants dont les couleurs sont écrites en dur dans ce fichier.
+   ============================================================================== */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-main: #f6f7fb;
+  --bg-surface: #ffffff;
+  --bg-card: rgba(255, 255, 255, 0.85);
+  --bg-glass: rgba(255, 255, 255, 0.92);
+  --border-subtle: rgba(15, 23, 42, 0.09);
+  --border-highlight: rgba(79, 70, 229, 0.35);
+}
+:root:not([data-theme="light"]) { color-scheme: dark; }
+
+:root[data-theme="light"] body { color: #0f172a; }
+:root[data-theme="light"] body::before { background: radial-gradient(circle, rgba(99, 102, 241, 0.10) 0%, rgba(139, 92, 246, 0.04) 45%, transparent 70%); }
+:root[data-theme="light"] body::after { background: radial-gradient(circle, rgba(236, 72, 153, 0.06) 0%, rgba(99, 102, 241, 0.02) 50%, transparent 70%); }
+:root[data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, 0.15); }
+:root[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: rgba(15, 23, 42, 0.3); }
+:root[data-theme="light"] .glass-card:hover { border-color: rgba(15, 23, 42, 0.16); }
+:root[data-theme="light"] .glass-panel,
+:root[data-theme="light"] .glass-card { box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06); }
+:root[data-theme="light"] .ai-border-content { background: #ffffff; }
+:root[data-theme="light"] #dragDropOverlay { background: rgba(246, 247, 251, 0.95); }
+:root[data-theme="light"] .recording-item:hover { background-color: rgba(15, 23, 42, 0.04); }
+:root[data-theme="light"] .recording-item.active { background: linear-gradient(90deg, rgba(99, 102, 241, 0.12) 0%, rgba(139, 92, 246, 0.05) 100%); }
+:root[data-theme="light"] input[type="range"] { background: rgba(15, 23, 42, 0.12); }
+:root[data-theme="light"] input[type="range"]::-webkit-slider-thumb { background: #4f46e5; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25), 0 0 0 3px rgba(99, 102, 241, 0.25); }
+:root[data-theme="light"] .tab-btn.active { border-color: #4f46e5 !important; color: #4338ca !important; }
+:root[data-theme="light"] .preset-btn:hover { background: rgba(168, 85, 247, 0.10) !important; }
+
+/* Texte blanc conservé sur les boutons et bulles de couleur pleine (classes exactes :
+   les teintes transparentes comme bg-indigo-600/20 ne sont pas concernées) */
+:root[data-theme="light"] :is(.mic-btn-main, .from-indigo-600, .from-sky-600,
+  .bg-indigo-500, .bg-indigo-600, .bg-indigo-700, .bg-purple-600, .bg-sky-600,
+  .bg-rose-500, .bg-rose-600, .bg-emerald-600),
+:root[data-theme="light"] :is(.mic-btn-main, .from-indigo-600, .from-sky-600,
+  .bg-indigo-500, .bg-indigo-600, .bg-indigo-700, .bg-purple-600, .bg-sky-600,
+  .bg-rose-500, .bg-rose-600, .bg-emerald-600) .text-white {
+  color: #ffffff;
+}
+
+/* Composants ajoutés (puces, menus, transcription en direct…) */
+:root[data-theme="light"] .ref-chip { color: #4338ca; background: rgba(99, 102, 241, 0.10); border-color: rgba(99, 102, 241, 0.3); }
+:root[data-theme="light"] .ref-chip:hover { background: rgba(99, 102, 241, 0.2); color: #312e81; }
+:root[data-theme="light"] .speaker-rename-btn { color: #334155; background: #ffffff; border-color: rgba(15, 23, 42, 0.12); }
+:root[data-theme="light"] .speaker-rename-btn:hover { color: #312e81; }
+:root[data-theme="light"] .cf-tree-box { background: #f8fafc; border-color: rgba(15, 23, 42, 0.1); }
+:root[data-theme="light"] .cf-toggle:hover { color: #0f172a; background: rgba(15, 23, 42, 0.06); }
+:root[data-theme="light"] .cf-select { color: #334155; }
+:root[data-theme="light"] .cf-select:hover { color: #0f172a; }
+:root[data-theme="light"] .cf-select.cf-selected { color: #075985; background: rgba(56, 189, 248, 0.2); }
+:root[data-theme="light"] .cf-option { color: #0f172a; background: #ffffff; border-color: rgba(15, 23, 42, 0.1); }
+:root[data-theme="light"] .cf-option:has(input:checked) { background: rgba(224, 242, 254, 0.8); }
+:root[data-theme="light"] .chat-actions { border-top-color: rgba(15, 23, 42, 0.08); }
+:root[data-theme="light"] .chat-action-btn { color: #4338ca; background: rgba(99, 102, 241, 0.08); border-color: rgba(99, 102, 241, 0.25); }
+:root[data-theme="light"] .chat-action-btn:hover { color: #312e81; background: rgba(99, 102, 241, 0.18); }
+:root[data-theme="light"] .chat-md strong { color: #0f172a; }
+:root[data-theme="light"] .mail-menu { background: #ffffff; border-color: rgba(15, 23, 42, 0.12); box-shadow: 0 12px 30px rgba(15, 23, 42, 0.15); }
+:root[data-theme="light"] .mail-menu button { color: #0f172a; }
+:root[data-theme="light"] .mail-menu button span { color: #64748b; }
+:root[data-theme="light"] .live-switch-track { background: #cbd5e1; border-color: rgba(15, 23, 42, 0.1); }
+:root[data-theme="light"] .live-switch-thumb { background: #ffffff; }
+:root[data-theme="light"] .live-box { color: #0f172a; background: #ffffff; border-color: rgba(15, 23, 42, 0.1); }
+:root[data-theme="light"] .live-ts { color: #4f46e5; }
+:root[data-theme="light"] .live-interim { color: #64748b; }
+:root[data-theme="light"] .stt-card { color: #334155; background: #ffffff; border-color: rgba(15, 23, 42, 0.12); }
+:root[data-theme="light"] .stt-card:hover { background: #f8fafc; }
+:root[data-theme="light"] .stt-card:has(input:checked) { color: #0f172a; background: rgba(243, 232, 255, 0.7); border-color: rgba(147, 51, 234, 0.5); }
+
+/* Sélecteur de thème (en-tête) */
+.theme-toggle-btn { display: inline-flex; align-items: center; gap: 6px; }
+.theme-toggle-btn .theme-label { font-size: 11px; font-weight: 600; }
+
+/* Recherche dans la transcription */
+mark.search-hit { background: rgba(250, 204, 21, 0.35); color: inherit; border-radius: 3px; padding: 0 1px; }
+:root[data-theme="light"] mark.search-hit { background: rgba(250, 204, 21, 0.55); }

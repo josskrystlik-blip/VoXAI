@@ -184,7 +184,7 @@
     if (actions.length) {
       h += `<h2>Plan d'action</h2><ac:task-list>${actions.map(a => {
         const meta = [a.assignee ? `👤 ${x(a.assignee)}` : '', a.deadline ? `📅 ${x(a.deadline)}` : ''].filter(Boolean).join(' — ');
-        return `<ac:task><ac:task-status>incomplete</ac:task-status><ac:task-body>${x(a.task)}${meta ? ` — ${meta}` : ''}</ac:task-body></ac:task>`;
+        return `<ac:task><ac:task-status>${a.status === 'done' ? 'complete' : 'incomplete'}</ac:task-status><ac:task-body>${x(a.task)}${meta ? ` — ${meta}` : ''}</ac:task-body></ac:task>`;
       }).join('')}</ac:task-list>`;
     }
 

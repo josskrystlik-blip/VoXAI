@@ -184,6 +184,13 @@ docker run -d -p 8080:80 -e CONFLUENCE_URL=https://confluence.mon-entreprise.fr 
 
 Sans proxy (GitHub Pages), l'administrateur Confluence doit autoriser l'origine de VoxAI en CORS.
 
+## 🎨 Apparence, recherche et sauvegarde
+
+- **Thème clair / sombre** : bouton dans l'en-tête, qui alterne entre **Auto** (suit le réglage clair ou sombre du système), **Clair** et **Sombre**. Le choix est mémorisé dans le navigateur.
+- **Recherche dans la transcription** : sans tenir compte des accents ni des majuscules, avec surlignage et nombre d'occurrences ; le nom d'un orateur fonctionne aussi.
+- **Plan d'action** : les actions cochées sont enregistrées et reprises dans les copies et dans Confluence (tâches terminées).
+- **💾 Sauvegarde** (⚙️ Paramètres) : les données vivent dans le navigateur. **Exporter mes données** crée un fichier `.voxai` (audios, transcriptions, comptes rendus, discussions) ; **Restaurer une sauvegarde** le réimporte ici ou sur un autre poste (les enregistrements déjà présents sont ignorés).
+
 ## 🎙️ Transcription en direct & e-mail de compte rendu
 
 - **Transcription en direct** (interrupteur sous le bouton d'enregistrement) : le texte s'affiche pendant que vous parlez, via la reconnaissance vocale du navigateur (Chrome / Edge). ⚠️ L'audio est alors aussi envoyé à Google ou Microsoft ; la fonction est désactivée par défaut. Ce brouillon est conservé avec l'enregistrement ; l'analyse IA reste la transcription de référence.
