@@ -3,6 +3,10 @@ name: GitHub Pages
 # Publie l'application web sur GitHub Pages à chaque mise à jour de main.
 # Seuls les fichiers de l'interface sont publiés (pas les tests, ni la configuration Docker).
 # Prérequis (une seule fois) : Settings → Pages → Source : « GitHub Actions ».
+#
+# Deux jobs séparés (modèle officiel GitHub) : le site est préparé et envoyé dans « build »,
+# puis publié dans « deploy ». L'archive est ainsi enregistrée par GitHub avant d'être
+# recherchée (dans un seul job, la publication pouvait ne pas la trouver).
 on:
   push:
     branches: [main]
@@ -10,19 +14,17 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read
+      pages: read
     steps:
       - uses: actions/checkout@v7
 
@@ -36,6 +38,17 @@ jobs:
       - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Déployer
         id: deployment
         uses: actions/deploy-pages@v5
