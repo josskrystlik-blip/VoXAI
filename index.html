@@ -95,6 +95,12 @@
         </label>
       </div>
 
+      <!-- Séries : filtre et gestion -->
+      <div class="px-4 pt-3 flex items-center gap-2">
+        <select id="seriesFilter" class="hidden flex-1 min-w-0 bg-slate-900/60 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/60" aria-label="Filtrer par série"></select>
+        <button type="button" id="seriesManageBtn" class="ml-auto shrink-0 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-white/10 hover:border-indigo-500/40 transition" title="Gérer les séries de réunions">🗂️ Séries</button>
+      </div>
+
       <!-- Search Bar -->
       <div class="px-4 py-3">
         <div class="relative">
@@ -119,6 +125,10 @@
         <div class="max-w-xl w-full flex flex-col items-center text-center space-y-6">
 
           <!-- Titre d'enregistrement optionnel -->
+          <div class="w-full max-w-md flex items-center gap-2">
+            <label for="seriesSelect" class="text-xs font-semibold text-slate-400 shrink-0">🗂️ Série</label>
+            <select id="seriesSelect" class="flex-1 min-w-0 bg-slate-900/80 border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500"></select>
+          </div>
           <div class="w-full max-w-md">
             <input type="text" id="recordTitleInput" placeholder="Titre de la conversation (ex: Point Projet, Débat...)" class="w-full bg-slate-900/50 border border-white/10 rounded-2xl px-5 py-3 text-center text-sm font-medium text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500/70 focus:bg-slate-900/80 shadow-lg transition">
           </div>
@@ -216,6 +226,10 @@
                 </svg>
                 Copier
               </button>
+              <button id="sendParticipantsBtn" type="button" class="hidden flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-200 border border-white/10 hover:border-emerald-500/40 transition shadow-sm">
+                <span class="text-sm leading-none" aria-hidden="true">✉️</span>
+                Envoyer aux participants
+              </button>
               <button id="publishConfluenceBtn" title="Publier le compte rendu dans Confluence" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-200 border border-white/10 hover:border-sky-500/40 transition shadow-sm">
                 <span class="text-sm leading-none">📘</span>
                 Confluence
@@ -234,6 +248,11 @@
             <span id="detailDuration" class="font-mono">02:15</span>
             <span>•</span>
             <span id="detailSize">1.2 MB</span>
+            <span>•</span>
+            <label class="flex items-center gap-1.5">
+              <span aria-hidden="true">🗂️</span>
+              <select id="detailSeriesSelect" class="bg-slate-900/80 border border-white/10 rounded-lg px-2 py-0.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500" aria-label="Série de cet enregistrement"></select>
+            </label>
             <span>•</span>
             <span id="detailFilesBadge" class="px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 font-medium">1 fichier</span>
             
@@ -719,6 +738,65 @@
   </div>
 
   <!-- Notification Toast -->
+  <!-- SÉRIES DE RÉUNIONS -->
+  <div id="seriesModal" class="fixed inset-0 bg-black/75 backdrop-blur-md z-50 items-center justify-center p-4 hidden" style="display: none;">
+    <div class="glass-panel rounded-3xl w-full max-w-3xl shadow-2xl flex flex-col overflow-hidden border border-white/15 max-h-[92vh]">
+      <div class="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <span class="text-xl" aria-hidden="true">🗂️</span>
+          <h3 class="text-base font-bold text-white tracking-tight">Séries de réunions</h3>
+        </div>
+        <button id="seriesCloseBtn" type="button" class="text-slate-400 hover:text-white p-1 rounded-lg transition" aria-label="Fermer">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="flex flex-col sm:flex-row min-h-0 overflow-y-auto">
+        <div class="sm:w-60 shrink-0 p-4 border-b sm:border-b-0 sm:border-r border-white/10 space-y-2">
+          <button type="button" id="seriesNewBtn" class="w-full px-3 py-2 rounded-xl text-xs font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition">＋ Nouvelle série</button>
+          <div id="seriesList" class="space-y-1"></div>
+        </div>
+        <div id="seriesForm" class="hidden flex-1 p-5 space-y-4">
+          <h4 id="seriesFormTitle" class="text-sm font-bold text-white"></h4>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <label class="sm:col-span-2 block">
+              <span class="block text-xs font-semibold text-slate-300 mb-1">Nom de la série</span>
+              <input type="text" id="seriesName" maxlength="120" placeholder="Point projet Alpha — hebdo" class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500">
+            </label>
+            <label class="block">
+              <span class="block text-xs font-semibold text-slate-300 mb-1">Type</span>
+              <select id="seriesType" class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-indigo-500">
+                <option value="weekly">Point d’équipe hebdo</option>
+                <option value="steering">Comité de pilotage</option>
+                <option value="other">Autre</option>
+              </select>
+            </label>
+          </div>
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs font-semibold text-slate-300">Participants</span>
+              <button type="button" id="seriesAddParticipant" class="text-xs text-indigo-400 hover:text-indigo-300 font-semibold">＋ Ajouter</button>
+            </div>
+            <p class="text-[11px] text-slate-500 mb-2">Les noms aident l’IA à nommer les orateurs ; les adresses servent à l’e-mail du compte rendu.</p>
+            <div id="seriesParticipants" class="space-y-1.5"></div>
+          </div>
+          <div>
+            <span class="block text-xs font-semibold text-slate-300 mb-1">Page Confluence de la série</span>
+            <div class="flex flex-wrap items-center gap-2 text-xs">
+              <span id="seriesParentLabel" class="text-slate-400"></span>
+              <button type="button" id="seriesParentPick" class="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-white/10 hover:border-sky-500/40 text-slate-200 font-semibold transition">📘 Choisir dans Confluence</button>
+              <button type="button" id="seriesParentClear" class="hidden text-slate-400 hover:text-rose-400">Retirer</button>
+            </div>
+          </div>
+          <div class="flex flex-wrap items-center gap-3 pt-2 border-t border-white/10">
+            <button type="button" id="seriesSaveBtn" class="px-4 py-2 rounded-xl text-xs font-bold bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition">Enregistrer la série</button>
+            <button type="button" id="seriesDeleteBtn" class="hidden px-3 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-rose-400 transition">Supprimer la série</button>
+            <span id="seriesFormStatus" class="text-[11px]" aria-live="polite"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ASSISTANT IA GLOBAL (toutes les réunions) -->
   <aside id="assistantPanel" class="hidden assistant-panel glass-panel" role="dialog" aria-label="Assistant IA">
     <div class="px-4 py-3 border-b border-white/10 flex items-center justify-between gap-2">
@@ -756,7 +834,7 @@
       <div class="px-6 py-4 border-b border-white/10 flex items-center justify-between">
         <div class="flex items-center gap-2.5">
           <span class="text-xl">📘</span>
-          <h3 class="text-base font-bold text-white tracking-tight">Publier le compte rendu dans Confluence</h3>
+          <h3 id="cfModalTitle" class="text-base font-bold text-white tracking-tight">Publier le compte rendu dans Confluence</h3>
         </div>
         <button id="cfCloseBtn" class="text-slate-400 hover:text-white p-1 rounded-lg transition" aria-label="Fermer">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
@@ -789,7 +867,7 @@
             <p class="text-[11px] text-slate-400 mt-1.5">Sélection : <strong id="cfTargetLabel" class="text-slate-200"></strong></p>
           </div>
 
-          <div>
+          <div id="cfActionBlock">
             <label class="block text-xs font-semibold text-slate-300 mb-1.5">3. Action</label>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <label class="cf-option"><input type="radio" name="cfAction" value="create" checked> <span><strong>Créer une page</strong><br><span class="text-slate-400">sous l'emplacement sélectionné</span></span></label>
@@ -805,7 +883,7 @@
             </div>
           </div>
 
-          <div class="flex flex-wrap gap-4 text-xs text-slate-300">
+          <div id="cfOptionsBlock" class="flex flex-wrap gap-4 text-xs text-slate-300">
             <label class="flex items-center gap-1.5"><input type="checkbox" id="cfAttachTranscript" checked> Joindre la transcription intégrale (fichier .txt en pièce jointe)</label>
             <label class="flex items-center gap-1.5"><input type="checkbox" id="cfIncludeTranscript" checked> Afficher aussi la transcription dans la page (bloc dépliable)</label>
             <label class="flex items-center gap-1.5"><input type="checkbox" id="cfAddLabels" checked> Ajouter les tags comme étiquettes</label>
@@ -824,6 +902,7 @@
 
   <script src="db.js"></script>
   <script src="app.js"></script>
+  <script src="series.js"></script>
   <script src="live.js"></script>
   <script src="confluence.js"></script>
 </body>

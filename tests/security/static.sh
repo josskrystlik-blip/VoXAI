@@ -6,7 +6,7 @@ cd "$(dirname "$0")/../.."
 PASS=0; FAIL=0
 ok() { echo "  ✓ $1"; PASS=$((PASS + 1)); }
 ko() { echo "  ✗ $1"; [ -n "${2:-}" ] && echo "$2" | sed 's/^/      /'; FAIL=$((FAIL + 1)); }
-APP="app.js db.js confluence.js live.js theme-init.js"
+APP="app.js db.js confluence.js live.js theme-init.js series.js"
 
 echo "Contrôles de sécurité statiques VoxAI"
 

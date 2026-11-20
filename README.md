@@ -185,6 +185,16 @@ docker run -d -p 8080:80 -e CONFLUENCE_URL=https://confluence.mon-entreprise.fr 
 
 Sans proxy (GitHub Pages), l'administrateur Confluence doit autoriser l'origine de VoxAI en CORS.
 
+## 🗂️ Séries de réunions (réunions récurrentes)
+
+Pour une réunion récurrente (« Point projet Alpha — hebdo ») enregistrée par une personne désignée :
+
+1. **🗂️ Séries → Nouvelle série** : nom, type (point d'équipe hebdo, comité de pilotage), participants (noms et adresses e-mail) et page Confluence de la série, choisie dans l'arborescence.
+2. Choisir la série sur l'écran d'enregistrement (ou à l'import) : le titre devient « <série> — <date> », les noms des participants aident l'IA à nommer les orateurs, et un nom corrigé une fois (« Marco » → « Bob ») est reconnu aux réunions suivantes.
+3. Après la réunion, deux clics : **📘 Confluence** (publication préremplie sous la page de la série, avec l'étiquette de la série) puis **✉️ Envoyer aux participants** (e-mail dans Outlook, Outlook Web, Gmail ou la messagerie par défaut, destinataires préremplis, lien vers la page Confluence).
+
+La liste des enregistrements se filtre par série ; un enregistrement se rattache ou se détache depuis sa page. Les séries sont incluses dans la sauvegarde `.voxai`. Supprimer une série conserve ses enregistrements.
+
 ## 💬 Assistant IA global et correction des synthèses
 
 - Bouton **💬 Assistant** dans l'en-tête, disponible partout : l'assistant connaît **toutes vos réunions** (titres, dates, synthèses, actions) et la transcription complète de celle qui est ouverte. Questions transversales (« quelles actions sont encore à faire ? »), e-mails, comparaisons entre réunions.
@@ -216,6 +226,7 @@ VoXAI/
 ├── db.js        # « Backend » local : base IndexedDB + appels IA (Gemini / LLM local)
 ├── confluence.js # Publication des comptes rendus dans Confluence (PAT)
 ├── live.js      # Transcription en direct (reconnaissance vocale du navigateur)
+├── series.js    # Séries de réunions (participants, Confluence, e-mail aux participants)
 ├── style.css    # Styles et animations
 ├── vendor/      # Styles Tailwind et polices générés (npm run build) : aucun CDN
 ├── start.sh     # Serveur statique pour un usage local
