@@ -940,6 +940,8 @@ function renderRecordingDetails() {
 
 function renderSummaryTab(summary) {
   if (!summary || typeof summary !== 'object') {
+    const card = document.getElementById('followupCard');
+    if (card) card.classList.add('hidden');
     elements.summaryExecutive.textContent = "Cet enregistrement n'a pas encore été analysé par l'IA. Cliquez sur 'Relancer IA' ci-dessus.";
     elements.summaryDecisions.innerHTML = '<li class="text-slate-500 italic">Aucune décision recensée.</li>';
     elements.summaryActions.innerHTML = '<p class="text-slate-500 italic">Aucune action requise.</p>';
@@ -994,6 +996,9 @@ function renderSummaryTab(summary) {
   elements.summaryTags.innerHTML = tags.map(t => `
     <span class="text-xs px-2.5 py-1 rounded-full bg-slate-800 text-slate-300 border border-slate-700 font-medium">#${escapeHtml(t)}</span>
   `).join('');
+
+  // Suivi des actions des réunions précédentes (séries, phase 2)
+  if (window.VoxSeries) VoxSeries.renderFollowup();
 }
 
 // Un élément de synthèse est soit une chaîne (anciennes analyses), soit { text, refs }
@@ -1958,6 +1963,12 @@ function buildSummaryMarkdown(rec) {
     if (s.action_items && s.action_items.length) {
       md += `## ✅ Plan d'Action\n`;
       s.action_items.forEach(a => md += `- [${a.status === 'done' ? 'x' : ' '}] **${a.task}** (Assigné : ${a.assignee || 'Tous'}, Échéance : ${a.deadline || 'N/A'})\n`);
+      md += `\n`;
+    }
+
+    if (s.action_followup && s.action_followup.length) {
+      md += `## 🔁 Suivi des actions précédentes\n`;
+      s.action_followup.forEach(f => md += `- ${f.status === 'done' ? '✅ Terminée' : '🔄 En cours'} — **${f.task}**${f.assignee ? ` (${f.assignee})` : ''}${f.note ? ` : ${f.note}` : ''}\n`);
       md += `\n`;
     }
 

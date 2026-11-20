@@ -240,6 +240,13 @@
       }).join('')}</ac:task-list>`;
     }
 
+    // Phase 2 : actions des réunions précédentes dont il a été question
+    const followup = (s.action_followup || []).filter(f => f && f.task);
+    if (followup.length) {
+      h += `<h2>Suivi des actions précédentes</h2><ul>${followup.map(f =>
+        `<li>${f.status === 'done' ? '✅ Terminée' : '🔄 En cours'} — ${x(f.task)}${f.assignee ? ` (👤 ${x(f.assignee)})` : ''}${f.note ? ` : ${x(f.note)}` : ''}</li>`).join('')}</ul>`;
+    }
+
     const keyPoints = s.key_points || [];
     if (keyPoints.length) h += `<h2>Points clés</h2><ul>${keyPoints.map(k => `<li>${x(text(k))}</li>`).join('')}</ul>`;
 
