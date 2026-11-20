@@ -40,8 +40,9 @@ Dictaphone web boosté par l'Intelligence Artificielle (**Google Gemini** ou **L
 ### Option A — GitHub Pages (recommandé)
 
 1. Dans le dépôt GitHub : **Settings → Pages**.
-2. **Source** : *Deploy from a branch*, branche `main`, dossier `/ (root)`, puis **Save**.
-3. Après une minute, l'application est en ligne sur `https://<votre-compte>.github.io/VoXAI/`.
+2. **Source** : *GitHub Actions* (une seule fois).
+3. Le workflow `.github/workflows/pages.yml` publie l'application à chaque mise à jour de `main` (ou à la demande depuis l'onglet **Actions**). Seuls les fichiers de l'interface sont publiés.
+4. Après une minute, l'application est en ligne sur `https://<votre-compte>.github.io/VoXAI/`.
 
 ### Option B — En local
 
