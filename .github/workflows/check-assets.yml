@@ -39,3 +39,12 @@ jobs:
             echo "::error::style.css importe une ressource externe."
             exit 1
           fi
+      - name: Version affichée = dernière entrée de « Nouveautés »
+        run: |
+          shown="$(grep -oE 'id="appVersion" class="font-mono">v[0-9.]+' index.html | grep -oE 'v[0-9.]+$')"
+          latest="$(grep -oE '<h4 class="text-sm font-bold text-white"><span class="font-mono">v[0-9.]+' index.html | head -1 | grep -oE 'v[0-9.]+$')"
+          echo "affichée : $shown — dernière entrée : $latest"
+          if [ -z "$shown" ] || [ "$shown" != "$latest" ]; then
+            echo "::error::La version affichée ($shown) doit être la première entrée de la fenêtre « Nouveautés » ($latest)."
+            exit 1
+          fi

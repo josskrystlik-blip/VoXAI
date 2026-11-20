@@ -2450,5 +2450,27 @@ function showToast(message, icon = '🔔') {
   }, 3500);
 }
 
+// ============================================================================
+// Nouveautés : historique des versions (contenu statique dans index.html)
+// ============================================================================
+function setupVersions() {
+  const modal = document.getElementById('versionsModal');
+  const btn = document.getElementById('versionsBtn');
+  if (!modal || !btn) return;
+  const show = (open) => {
+    modal.classList.toggle('hidden', !open);
+    modal.style.display = open ? 'flex' : 'none';
+    if (open) document.getElementById('versionsCloseBtn').focus();
+    else btn.focus();
+  };
+  btn.addEventListener('click', () => show(true));
+  document.getElementById('versionsCloseBtn').addEventListener('click', () => show(false));
+  modal.addEventListener('click', (e) => { if (e.target === modal) show(false); });
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !modal.classList.contains('hidden')) show(false);
+  });
+}
+
 // Start
 document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', setupVersions);

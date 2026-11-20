@@ -80,6 +80,8 @@ git tag v1.0.0 && git push origin v1.0.0
 
 Le workflow `.github/workflows/release.yml` construit l'image (amd64 + arm64), la publie sur `ghcr.io` et crée la release avec ses fichiers.
 
+Avant chaque release, mettez à jour la version affichée en bas de la barre latérale (`id="appVersion"` dans `index.html`) et ajoutez une entrée en tête de la fenêtre « Nouveautés » : la release refuse de partir si la version affichée ne correspond pas au tag.
+
 > 💾 Les données sont propres à chaque navigateur et à chaque adresse : un enregistrement fait sur GitHub Pages n'apparaît pas sur `localhost`, et inversement. Vider les données du site dans le navigateur efface la base.
 
 ---
