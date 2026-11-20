@@ -173,6 +173,7 @@ Chaque enregistrement analysé peut être publié en compte rendu dans Confluenc
    - **Créer une page** sous l'emplacement sélectionné, ou
    - **Mettre à jour la page** sélectionnée (ajout à la fin ou remplacement du contenu).
 3. Le compte rendu contient le résumé, les décisions, le plan d'action (cases à cocher Confluence), les points clés et, en option, la transcription dans un bloc dépliable. Les tags deviennent des étiquettes.
+4. La **transcription intégrale est jointe à la page** (fichier `Transcription - <titre>.txt`, lien dans le compte rendu). VoxAI relit ensuite la liste des pièces jointes pour **vérifier** que le fichier est bien présent et complet ; lors d'une mise à jour, une nouvelle version de la pièce jointe est créée.
 
 ### CORS : utiliser le proxy du conteneur
 
