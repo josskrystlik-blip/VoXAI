@@ -188,6 +188,7 @@ Sans proxy (GitHub Pages), l'administrateur Confluence doit autoriser l'origine 
 
 - **Thème clair / sombre** : bouton dans l'en-tête, qui alterne entre **Auto** (suit le réglage clair ou sombre du système), **Clair** et **Sombre**. Le choix est mémorisé dans le navigateur.
 - **Recherche dans la transcription** : sans tenir compte des accents ni des majuscules, avec surlignage et nombre d'occurrences ; le nom d'un orateur fonctionne aussi.
+- **Télécharger l'audio** : bouton ⬇️ dans le lecteur, pour récupérer l'enregistrement (ou la piste en cours pour une session à plusieurs fichiers).
 - **Plan d'action** : les actions cochées sont enregistrées et reprises dans les copies et dans Confluence (tâches terminées).
 - **💾 Sauvegarde** (⚙️ Paramètres) : les données vivent dans le navigateur. **Exporter mes données** crée un fichier `.voxai` (audios, transcriptions, comptes rendus, discussions) ; **Restaurer une sauvegarde** le réimporte ici ou sur un autre poste (les enregistrements déjà présents sont ignorés).
 

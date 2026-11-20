@@ -303,6 +303,14 @@
               <option value="2">2.0x</option>
             </select>
 
+            <!-- Téléchargement de l'audio -->
+            <button id="downloadAudioBtn" type="button" class="flex items-center gap-1.5 bg-slate-900 hover:bg-slate-800 border border-white/10 hover:border-indigo-500/40 text-slate-200 text-xs rounded-xl px-2.5 py-1.5 font-medium transition" title="Télécharger l'enregistrement audio">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4"/>
+              </svg>
+              <span>Audio</span>
+            </button>
+
             <audio id="audioElement" class="hidden"></audio>
           </div>
         </div>

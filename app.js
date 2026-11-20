@@ -819,6 +819,7 @@ function selectAudioTrack(index) {
   if (!rec || !rec.files || !rec.files[index]) return;
   state.activeFileIndex = index;
   const file = rec.files[index];
+  updateDownloadAudioBtn();
 
   VoxLocal.audioUrl(file.filename).then(u => { if (state.activeFileIndex === index) elements.audioElement.src = u; });
   elements.playerCurrentTime.textContent = '00:00';
@@ -920,6 +921,8 @@ function renderRecordingDetails() {
   elements.playerSeek.value = 0;
   elements.playerPlayIcon.classList.remove('hidden');
   elements.playerPauseIcon.classList.add('hidden');
+
+  updateDownloadAudioBtn();
 
   // Render Tabs
   const search = document.getElementById('searchTranscript');
@@ -1374,15 +1377,59 @@ function buildEml(email) {
   ].join('\r\n');
 }
 
+/** Nom de fichier en ASCII (accents et tirets typographiques mal gérés par certains navigateurs). */
+function safeFileName(text, fallback = 'fichier') {
+  const name = String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u2010-\u2015]/g, '-').replace(/[^\x20-\x7e]/g, '')
+    .replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+  return name || fallback;
+}
+
+// ==============================================================================
+// Téléchargement de l'enregistrement audio (piste en cours de lecture)
+// ==============================================================================
+
+function updateDownloadAudioBtn() {
+  const btn = document.getElementById('downloadAudioBtn');
+  const rec = state.activeRecording;
+  if (!btn || !rec) return;
+  const files = rec.files || [];
+  const multi = files.length > 1;
+  btn.title = multi
+    ? `Télécharger la piste ${state.activeFileIndex + 1} sur ${files.length} (choisissez une autre piste pour la télécharger)`
+    : "Télécharger l'enregistrement audio";
+  btn.querySelector('span').textContent = multi ? `Piste ${state.activeFileIndex + 1}` : 'Audio';
+  btn.disabled = !files.length && !rec.filename;
+}
+
+async function downloadCurrentAudio() {
+  const rec = state.activeRecording;
+  if (!rec) return;
+  const files = rec.files || [];
+  const file = files[state.activeFileIndex] || files[0];
+  const filename = file ? file.filename : rec.filename;
+  const url = await VoxLocal.audioUrl(filename);
+  if (!url) {
+    showToast('Fichier audio introuvable dans ce navigateur', '⚠️');
+    return;
+  }
+  const ext = (String(filename).match(/\.[a-z0-9]{2,5}$/i) || ['.webm'])[0];
+  let name = safeFileName(rec.title, 'Enregistrement');
+  if (files.length > 1) name += ` - piste ${state.activeFileIndex + 1} - ${safeFileName(String(file.original_name || '').replace(/\.[^.]+$/, ''), 'audio')}`;
+  const a = document.createElement('a');
+  a.href = url; // URL locale (blob) réutilisée par le lecteur : rien ne sort du navigateur
+  a.download = `${name}${ext}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  showToast(`Téléchargement : ${a.download}`, '⬇️');
+}
+
 function downloadEml(email) {
   const blob = new Blob([buildEml(email)], { type: 'message/rfc822' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  // Nom de fichier en ASCII (accents et tirets typographiques mal gérés par certains navigateurs)
-  const safeName = email.subject.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[\u2010-\u2015]/g, '-').replace(/[^\x20-\x7e]/g, '')
-    .replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
-  a.download = `${safeName || 'Compte rendu'}.eml`;
+  a.download = `${safeFileName(email.subject, 'Compte rendu')}.eml`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -1908,6 +1955,7 @@ function setupEventListeners() {
   });
   elements.exportMarkdownBtn.addEventListener('click', exportAsMarkdown);
   elements.copyTranscriptBtn.addEventListener('click', copyTranscriptOnly);
+  document.getElementById('downloadAudioBtn').addEventListener('click', downloadCurrentAudio);
 
   // Actions du plan cochées : enregistrées dans la base locale
   elements.summaryActions.addEventListener('change', async (e) => {
