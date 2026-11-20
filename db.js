@@ -382,6 +382,21 @@
     return lines.length ? `\n\nContexte de la série « ${ctx.name} » :\n- ${lines.join('\n- ')}` : '';
   }
 
+  /**
+   * Phase 2 : actions encore ouvertes des réunions précédentes de la série. L'IA indique
+   * celles dont la réunion a parlé (« action_followup ») ; rien n'est clôturé sans l'utilisateur.
+   */
+  function followupHint(ctx) {
+    const open = (ctx && Array.isArray(ctx.open_actions)) ? ctx.open_actions : [];
+    if (!open.length) return '';
+    const lines = open.map(a => `- ${a.id} : ${a.task}${a.assignee ? ` — ${a.assignee}` : ''}${a.deadline ? ` — échéance ${a.deadline}` : ''} (réunion du ${a.meeting_date})`);
+    return `
+
+Actions encore ouvertes, issues des réunions précédentes de cette série :
+${lines.join('\n')}
+Ajoute dans "summary" un champ "action_followup" : une liste avec, pour CHAQUE action ci-dessus dont il est question dans cette réunion, un objet {"id": "A1", "status": "done" ou "in_progress", "note": "ce qui en a été dit, en une phrase", "refs": [numéros des segments]}. Mets "done" uniquement si la réunion dit clairement que l'action est terminée. N'inclus pas les actions dont on ne parle pas, et n'invente aucun identifiant. Ne recopie pas ces actions dans "action_items", sauf si une nouvelle action en découle.`;
+  }
+
   async function processWithGemini(audioFiles, cfg, ctx) {
     const multi = audioFiles.length > 1;
     const filesDesc = audioFiles.map(a => `'${a.name}'`).join(', ');
@@ -419,7 +434,7 @@ Règles impératives :
 4. ${REFS_RULE}
 5. Réponds UNIQUEMENT avec le JSON pur.`;
 
-    const parts = [{ text: prompt + seriesHint(ctx) }, ...(await audioParts(audioFiles, 'ENREGISTREMENT'))];
+    const parts = [{ text: prompt + seriesHint(ctx) + followupHint(ctx) }, ...(await audioParts(audioFiles, 'ENREGISTREMENT'))];
     const { text } = await geminiGenerate(cfg, {
       contents: [{ parts }],
       generationConfig: { temperature: 0.2, response_mime_type: 'application/json' }
@@ -482,7 +497,7 @@ Chaque ligne de la transcription commence par son numéro (#1, #2...). ${REFS_RU
     try {
       const content = await localChat(cfg, [
         { role: 'system', content: 'Tu es un analyste IA de réunions et notes vocales. Tu réponds UNIQUEMENT par un objet JSON pur et valide, sans markdown.' },
-        { role: 'user', content: prompt + seriesHint(ctx) }
+        { role: 'user', content: prompt + seriesHint(ctx) + followupHint(ctx) }
       ], 0.2, 300000, { jsonMode: true });
       const parsed = cleanJson(content);
       parsed.transcription = transcription;
@@ -757,8 +772,79 @@ ${EDIT_RULE}`;
           : (prevStatus.get(String((a && a.task) || '').trim().toLowerCase()) === 'done' ? 'done' : 'todo'),
         refs: refs(a && a.refs)
       })).filter(a => a.task.trim()),
-      tags: list(p.tags).map(t => String(t).trim()).filter(Boolean).slice(0, 20)
+      tags: list(p.tags).map(t => String(t).trim()).filter(Boolean).slice(0, 20),
+      // Suivi des actions précédentes : conservé tel quel si la proposition ne le contient pas
+      action_followup: sanitizeFollowup(Array.isArray(p.action_followup) ? p.action_followup : prev.action_followup, refs)
     };
+  }
+
+  /** Suivi d'actions précédentes : { rec_id, index, task, assignee, status, note, refs }. */
+  function sanitizeFollowup(list, refs) {
+    return (Array.isArray(list) ? list : []).slice(0, 100)
+      .filter(f => f && typeof f === 'object' && ID_RE.test(str(f.rec_id, 101)) && Number.isInteger(f.index) && f.index >= 0 && f.index < 1000)
+      .map(f => ({
+        rec_id: f.rec_id,
+        index: f.index,
+        task: str(f.task, 1000),
+        assignee: str(f.assignee, 200),
+        status: f.status === 'done' ? 'done' : 'in_progress',
+        note: str(f.note, 1000),
+        refs: refs(f.refs)
+      }))
+      .filter(f => f.task.trim());
+  }
+
+  /** Réponse de l'IA (« A1 »…) → suivi rattaché aux actions d'origine ; identifiants inconnus ignorés. */
+  function resolveFollowup(raw, openActions) {
+    const byId = new Map((openActions || []).map(a => [a.id, a]));
+    const seen = new Set();
+    return (Array.isArray(raw) ? raw : []).map(f => {
+      const a = f && typeof f === 'object' ? byId.get(str(f.id, 10).trim().toUpperCase()) : null;
+      if (!a || seen.has(a.id)) return null;
+      seen.add(a.id);
+      return { rec_id: a.rec_id, index: a.index, task: a.task, assignee: a.assignee, status: f.status, note: f.note, refs: f.refs };
+    }).filter(Boolean);
+  }
+
+  const frDate = (iso) => new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+
+  /**
+   * Actions de toutes les réunions d'une série, avec le dernier suivi connu de chacune
+   * (signalée terminée ou en cours lors d'une réunion suivante).
+   */
+  async function seriesActions(seriesId) {
+    const recs = (await store.all('recordings'))
+      .filter(r => r.series_id === seriesId)
+      .sort((a, b) => a.created_at.localeCompare(b.created_at));
+    const latest = new Map();
+    for (const r of recs) {
+      for (const f of ((r.summary && r.summary.action_followup) || [])) {
+        latest.set(`${f.rec_id}#${f.index}`, { status: f.status, note: f.note, rec_id: r.id, meeting_title: r.title, meeting_date: r.created_at });
+      }
+    }
+    const actions = [];
+    for (const r of recs) {
+      ((r.summary && r.summary.action_items) || []).forEach((a, index) => {
+        if (!a || !String(a.task || '').trim()) return;
+        actions.push({
+          rec_id: r.id, index, task: a.task, assignee: a.assignee || '', deadline: a.deadline || '',
+          status: a.status === 'done' ? 'done' : 'todo',
+          meeting_title: r.title, meeting_date: r.created_at,
+          followup: latest.get(`${r.id}#${index}`) || null
+        });
+      });
+    }
+    return { meetings: recs.map(r => ({ id: r.id, title: r.title, date: r.created_at, status: r.status, has_summary: !!r.summary })), actions };
+  }
+
+  /** Actions ouvertes des réunions de la série antérieures à « rec » (au plus 40, les plus récentes). */
+  async function openActionsBefore(rec) {
+    if (!rec.series_id) return [];
+    const { actions } = await seriesActions(rec.series_id);
+    return actions
+      .filter(a => a.status !== 'done' && a.rec_id !== rec.id && a.meeting_date < rec.created_at)
+      .slice(-40)
+      .map((a, i) => ({ ...a, id: `A${i + 1}`, meeting_date: frDate(a.meeting_date) }));
   }
 
   function corsHint(err) {
@@ -936,6 +1022,11 @@ ${EDIT_RULE}`;
       await store.put('series', series);
       return json(201, series);
     }
+    if (seg[0] === 'api' && seg[1] === 'series' && seg[2] && seg[3] === 'actions' && method === 'GET') {
+      const existing = await store.get('series', seg[2]);
+      if (!existing) return json(404, { error: 'Série introuvable' });
+      return json(200, await seriesActions(existing.id));
+    }
     if (seg[0] === 'api' && seg[1] === 'series' && seg[2]) {
       const existing = await store.get('series', seg[2]);
       if (!existing) return json(404, { error: 'Série introuvable' });
@@ -1036,9 +1127,10 @@ ${EDIT_RULE}`;
         }));
         const cfg = await loadConfig();
         const series = rec.series_id ? await store.get('series', rec.series_id) : null;
+        const openActions = series ? await openActionsBefore(rec) : [];
         await store.put('recordings', { ...rec, status: 'processing', error_message: null });
         try {
-          const result = await processRecording(audioFiles, cfg, series);
+          const result = await processRecording(audioFiles, cfg, series ? { ...series, open_actions: openActions } : null);
           const fresh = await store.get('recordings', recId);
           if (fresh) {
             const transcription = applySeriesAliases(sanitizeTranscription(result.transcription), series);
@@ -1047,7 +1139,10 @@ ${EDIT_RULE}`;
               // Dans une série, le titre daté (« <série> — <date> ») est conservé
               title: fresh.series_id ? fresh.title : (str(result.title, 300).trim() || fresh.title),
               transcription,
-              summary: sanitizeSummary(result.summary, null, transcription.length),
+              summary: sanitizeSummary({
+                ...(result.summary || {}),
+                action_followup: resolveFollowup(result.summary && result.summary.action_followup, openActions)
+              }, null, transcription.length),
               status: 'completed'
             });
           }
@@ -1103,13 +1198,19 @@ ${EDIT_RULE}`;
       }
 
       if (action === 'actions' && method === 'POST') {
-        const { index, done } = await req.json().catch(() => ({}));
+        const { index, done, task } = await req.json().catch(() => ({}));
         const rec = await store.get('recordings', recId);
         const items = rec && rec.summary && Array.isArray(rec.summary.action_items) ? rec.summary.action_items : null;
-        if (!items || !items[index]) return json(404, { error: 'Action introuvable' });
-        items[index] = { ...items[index], status: done ? 'done' : 'todo' };
+        let i = Number.isInteger(index) ? index : -1;
+        // Depuis une autre réunion (suivi, actions ouvertes) : l'action est retrouvée par son texte
+        // si la synthèse a été corrigée entre-temps et que l'index ne correspond plus.
+        if (items && typeof task === 'string' && (!items[i] || items[i].task !== task)) {
+          i = items.findIndex(a => a && a.task === task);
+        }
+        if (!items || !items[i]) return json(404, { error: 'Action introuvable' });
+        items[i] = { ...items[i], status: done ? 'done' : 'todo' };
         await store.put('recordings', rec);
-        return json(200, { success: true });
+        return json(200, { success: true, index: i });
       }
 
       if (action === 'live' && method === 'POST') {

@@ -344,6 +344,52 @@ function maliciousBackup() {
     await context.close();
   });
 
+  await scenario('Suivi des actions (phase 2) : réponses de l’IA et suivi piégés', async () => {
+    let n = 0;
+    const { context, page } = await openApp(browser, base, {
+      gemini: () => JSON.stringify(n++ === 0
+        ? { title: 'R1', transcription: [{ speaker: 'A', timestamp: '00:00', text: 'ok' }], summary: { executive: XSS, decisions: [{ text: XSS2 }], key_points: [], tags: [],
+            action_items: [{ task: XSS, assignee: XSS2, deadline: XSS_ATTR, refs: [1] }, { task: 'Action saine', assignee: 'Bob' }] } }
+        : { title: 'R2', transcription: [{ speaker: 'A', timestamp: '00:00', text: 'ok' }], summary: { executive: 'ok', decisions: [], key_points: [], tags: [], action_items: [],
+            action_followup: [
+              { id: 'A1', status: XSS, note: XSS, refs: [XSS, 1] },
+              { id: 'A2', status: 'done', note: XSS2, rec_id: '../../evil', index: -1 },
+              { id: XSS, status: 'done' }, { id: 'A99', status: 'done' }, 'texte', null] } })
+    });
+    await page.evaluate(() => fetch('/api/config', { method: 'POST', body: JSON.stringify({ gemini_api_key: 'test-key' }) }));
+    const series = await page.evaluate(() => fetch('/api/series', { method: 'POST', body: JSON.stringify({ name: 'Suivi', participants: [{ name: 'Bob', email: 'bob@corp.fr' }] }) }).then(r => r.json()));
+    await page.reload();
+    await page.waitForFunction(() => typeof state !== 'undefined' && state.config);
+    await page.waitForTimeout(600);
+    await page.selectOption('#seriesSelect', series.id);
+    for (let i = 0; i < 2; i++) {
+      await page.setInputFiles('#fileUploadInput', AUDIO);
+      // Réunion 1 : résumé piégé ; réunion 2 : « ok »
+      await page.waitForFunction(expected => state.activeRecording && state.activeRecording.status === 'completed'
+        && state.activeRecording.summary && state.activeRecording.summary.executive === expected, i === 0 ? XSS : 'ok', { timeout: 15000 });
+      await page.waitForTimeout(1100);
+    }
+    const rec = await page.evaluate(() => state.activeRecording);
+    const fu = rec.summary.action_followup || [];
+    assert(fu.length === 2, `suivi : ${fu.length} élément(s) au lieu de 2 (identifiants inconnus ou piégés acceptés)`);
+    assert(fu.every(f => f.rec_id !== '../../evil' && f.index >= 0), 'référence d’action fournie par l’IA acceptée telle quelle');
+    assert(fu[0].status === 'in_progress', `statut non validé : ${fu[0].status}`);
+    // Suivi falsifié via une correction de synthèse : références invalides écartées
+    const corrected = await page.evaluate(x => fetch(`/api/recordings/${x.id}/summary`, { method: 'POST', body: JSON.stringify({ summary: { executive: 'ok', action_items: [],
+      action_followup: [{ rec_id: '../x', index: 0, task: 'a' }, { rec_id: x.id, index: '1', task: 'b' }, { rec_id: x.id, index: 2, task: x.XSS, note: x.XSS, status: x.XSS }] } }) }).then(r => r.json()), { id: rec.id, XSS });
+    assert(corrected.summary.action_followup.length === 1 && corrected.summary.action_followup[0].status === 'in_progress',
+      `suivi falsifié accepté : ${JSON.stringify(corrected.summary.action_followup)}`);
+    await page.evaluate(id => selectRecording(id), rec.id);
+    await page.waitForTimeout(500);
+    await page.click('#seriesFollowBtn');
+    await page.waitForTimeout(500);
+    await page.check('#followShowDone');
+    await page.click('#followTabBrief');
+    await page.waitForTimeout(500);
+    await assertClean(page, 'suivi des actions (synthèse, fenêtre de suivi, brief)');
+    await context.close();
+  });
+
   await scenario('E-mail .eml : pas d’injection d’en-tête par l’objet', async () => {
     const { context, page } = await openApp(browser, base);
     const eml = await page.evaluate(() => buildEml({ subject: 'CR\r\nBcc: espion@exemple.com\r\nX-Evil: 1', body: 'Bonjour\r\n\r\n--fin' }));

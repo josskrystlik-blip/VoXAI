@@ -98,6 +98,7 @@
       <!-- Séries : filtre et gestion -->
       <div class="px-4 pt-3 flex items-center gap-2">
         <select id="seriesFilter" class="hidden flex-1 min-w-0 bg-slate-900/60 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/60" aria-label="Filtrer par série"></select>
+        <button type="button" id="seriesFollowBtn" class="hidden shrink-0 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-white/10 hover:border-sky-500/40 transition" title="Actions ouvertes et brief de la prochaine réunion">📌 Suivi</button>
         <button type="button" id="seriesManageBtn" class="ml-auto shrink-0 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-900/60 hover:bg-slate-800 text-slate-300 border border-white/10 hover:border-indigo-500/40 transition" title="Gérer les séries de réunions">🗂️ Séries</button>
       </div>
 
@@ -118,7 +119,7 @@
 
       <!-- Version (à mettre à jour à chaque release : la release vérifie qu'elle correspond au tag) -->
       <div class="px-4 py-2.5 border-t border-white/[0.06] flex items-center justify-between text-[11px] text-slate-500">
-        <span>VoxAI <span id="appVersion" class="font-mono">v1.9.0</span></span>
+        <span>VoxAI <span id="appVersion" class="font-mono">v1.10.0</span></span>
         <button type="button" id="versionsBtn" class="font-semibold text-indigo-400 hover:text-indigo-300 hover:underline transition" title="Historique des versions">Nouveautés</button>
       </div>
     </aside>
@@ -397,6 +398,19 @@
                 </div>
               </div>
 
+            </div>
+
+            <!-- Phase 2 : suivi des actions des réunions précédentes de la série -->
+            <div id="followupCard" class="glass-card p-6 hidden">
+              <div class="flex flex-wrap items-center gap-2 mb-4">
+                <div class="flex items-center gap-2 text-sky-400 text-xs font-bold uppercase tracking-wider">
+                  <span aria-hidden="true">🔁</span>
+                  <span>Suivi des actions précédentes</span>
+                </div>
+                <button type="button" id="followupApplyAll" class="hidden ml-auto px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 transition">Clôturer les actions terminées</button>
+              </div>
+              <p class="text-[11px] text-slate-400 mb-3">Actions ouvertes lors des réunions précédentes de la série, dont il a été question dans celle-ci. L'IA propose, vous confirmez.</p>
+              <div id="followupList" class="space-y-2 text-xs text-slate-200"></div>
             </div>
 
             <!-- Key Topics / Points Abordés -->
@@ -759,7 +773,17 @@
       </div>
       <div id="versionsList" class="overflow-y-auto p-6 space-y-5">
         <section class="version-entry">
-          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.9.0</span> — Version affichée et historique <span class="ml-1.5 px-1.5 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 text-[10px] font-semibold align-middle">Version actuelle</span></h4>
+          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.10.0</span> — Suivi des actions et brief avant réunion <span class="ml-1.5 px-1.5 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 text-[10px] font-semibold align-middle">Version actuelle</span></h4>
+          <p class="text-[11px] text-slate-500 mb-1.5">20 novembre 2026</p>
+          <ul class="list-disc pl-5 space-y-1 text-xs text-slate-300">
+            <li>À l’analyse d’une réunion d’une série, l’IA indique où en sont les actions des réunions précédentes (terminée, en cours) ; vous confirmez avant toute clôture.</li>
+            <li>Bouton « 📌 Suivi » : actions ouvertes de la série, regroupées par réunion, à cocher directement.</li>
+            <li>Brief de la prochaine réunion (dernière réunion et actions ouvertes par responsable), à copier ou à envoyer aux participants.</li>
+            <li>Le suivi des actions figure dans la page Confluence, l’e-mail aux participants et l’export.</li>
+          </ul>
+        </section>
+        <section class="version-entry">
+          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.9.0</span> — Version affichée et historique</h4>
           <p class="text-[11px] text-slate-500 mb-1.5">20 novembre 2026</p>
           <ul class="list-disc pl-5 space-y-1 text-xs text-slate-300">
             <li>Numéro de version affiché en bas de la barre latérale.</li>
@@ -870,6 +894,38 @@
             <li>Hébergeable sur GitHub Pages ; image Docker et archives livrées à chaque version.</li>
           </ul>
         </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== SUIVI DE SÉRIE (phase 2) ==================== -->
+  <div id="followModal" class="fixed inset-0 bg-black/75 backdrop-blur-md z-50 items-center justify-center p-4 hidden" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="followTitle">
+    <div class="glass-panel rounded-3xl w-full max-w-3xl shadow-2xl flex flex-col overflow-hidden border border-white/15 max-h-[92vh]">
+      <div class="px-6 py-4 border-b border-white/10 flex flex-wrap items-center gap-3">
+        <span class="text-xl" aria-hidden="true">📌</span>
+        <h3 id="followTitle" class="text-base font-bold text-white tracking-tight">Suivi de série</h3>
+        <select id="followSeries" class="min-w-0 max-w-[16rem] bg-slate-900/60 border border-white/10 rounded-xl px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-indigo-500/60" aria-label="Série"></select>
+        <button id="followCloseBtn" type="button" class="ml-auto text-slate-400 hover:text-white p-1 rounded-lg transition" aria-label="Fermer">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="px-6 pt-3 flex items-center gap-2 border-b border-white/10" role="tablist">
+        <button type="button" id="followTabActions" class="follow-tab follow-tab-active" role="tab" aria-selected="true">Actions ouvertes <span id="followOpenCount" class="font-mono"></span></button>
+        <button type="button" id="followTabBrief" class="follow-tab" role="tab" aria-selected="false">Brief de la prochaine réunion</button>
+      </div>
+      <div id="followPaneActions" class="overflow-y-auto p-6 space-y-4" role="tabpanel">
+        <label class="flex items-center gap-2 text-[11px] text-slate-400 cursor-pointer select-none">
+          <input type="checkbox" id="followShowDone" class="accent-indigo-500"> Afficher aussi les actions terminées
+        </label>
+        <div id="followActionsList" class="space-y-4"></div>
+      </div>
+      <div id="followPaneBrief" class="hidden overflow-y-auto p-6 space-y-4" role="tabpanel">
+        <p class="text-[11px] text-slate-400">Rappel de la dernière réunion et actions encore ouvertes, à envoyer aux participants avant la prochaine réunion. Construit localement, sans IA.</p>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" id="followBriefCopy" class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-white/10 transition">📋 Copier</button>
+          <button type="button" id="followBriefSend" class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white transition">✉️ Envoyer aux participants</button>
+        </div>
+        <div id="followBriefPreview" class="glass-card p-5 text-xs text-slate-200 leading-relaxed space-y-2.5 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-1"></div>
       </div>
     </div>
   </div>

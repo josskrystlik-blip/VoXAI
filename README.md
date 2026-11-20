@@ -198,6 +198,12 @@ Pour une réunion récurrente (« Point projet Alpha — hebdo ») enregistrée 
 
 La liste des enregistrements se filtre par série ; un enregistrement se rattache ou se détache depuis sa page. Les séries sont incluses dans la sauvegarde `.voxai`. Supprimer une série conserve ses enregistrements.
 
+### 📌 Suivi des actions d'une réunion à l'autre
+
+- **À l'analyse** d'une réunion d'une série, l'IA reçoit les actions encore ouvertes des réunions précédentes et indique celles dont il a été question (**terminée** ou **en cours**, avec ce qui en a été dit et un lien vers le passage de la transcription). Le bloc **🔁 Suivi des actions précédentes** de la synthèse les affiche : rien n'est clôturé sans votre clic sur **Clôturer**. Ce suivi figure aussi dans la page Confluence, l'e-mail aux participants et l'export.
+- **📌 Suivi** (barre latérale) : toutes les **actions ouvertes** de la série, regroupées par réunion, à cocher directement, avec leur dernier point d'avancement.
+- **Brief de la prochaine réunion** : rappel de la dernière réunion (résumé, décisions) et actions ouvertes par responsable, à **copier** ou à **envoyer aux participants**. Il est construit localement, sans IA.
+
 ## 💬 Assistant IA global et correction des synthèses
 
 - Bouton **💬 Assistant** dans l'en-tête, disponible partout : l'assistant connaît **toutes vos réunions** (titres, dates, synthèses, actions) et la transcription complète de celle qui est ouverte. Questions transversales (« quelles actions sont encore à faire ? »), e-mails, comparaisons entre réunions.
@@ -229,7 +235,7 @@ VoXAI/
 ├── db.js        # « Backend » local : base IndexedDB + appels IA (Gemini / LLM local)
 ├── confluence.js # Publication des comptes rendus dans Confluence (PAT)
 ├── live.js      # Transcription en direct (reconnaissance vocale du navigateur)
-├── series.js    # Séries de réunions (participants, Confluence, e-mail aux participants)
+├── series.js    # Séries de réunions (participants, Confluence, e-mail, suivi des actions, brief)
 ├── style.css    # Styles et animations
 ├── vendor/      # Styles Tailwind et polices générés (npm run build) : aucun CDN
 ├── start.sh     # Serveur statique pour un usage local

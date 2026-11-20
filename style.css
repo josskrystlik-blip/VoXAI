@@ -664,3 +664,20 @@ mark.search-hit { background: rgba(250, 204, 21, 0.35); color: inherit; border-r
 .series-item-active { background: rgba(99, 102, 241, 0.14); border-color: rgba(99, 102, 241, 0.35); }
 :root[data-theme="light"] .series-item { color: #0f172a; }
 :root[data-theme="light"] .series-item:hover { background: rgba(15, 23, 42, 0.05); }
+
+/* Suivi de série (phase 2) */
+.follow-tab { padding: 8px 4px; margin-bottom: -1px; font-size: 12px; font-weight: 600; color: #94a3b8; border-bottom: 2px solid transparent; transition: color 0.15s, border-color 0.15s; }
+.follow-tab:hover { color: #e2e8f0; }
+.follow-tab-active { color: #e2e8f0; border-bottom-color: #6366f1; }
+:root[data-theme="light"] .follow-tab:hover,
+:root[data-theme="light"] .follow-tab-active { color: #0f172a; }
+.follow-row { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border-radius: 10px; background: rgba(30, 41, 59, 0.4); border: 1px solid rgba(51, 65, 85, 0.4); }
+:root[data-theme="light"] .follow-row { background: rgba(241, 245, 249, 0.9); border-color: rgba(203, 213, 225, 0.8); }
+.follow-done .follow-task { text-decoration: line-through; opacity: 0.6; }
+.follow-badge { display: inline-block; padding: 1px 6px; border-radius: 6px; font-size: 10px; font-weight: 600; white-space: nowrap; }
+.follow-badge-done { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+.follow-badge-progress { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+.follow-badge-closed { background: rgba(100, 116, 139, 0.2); color: #94a3b8; }
+:root[data-theme="light"] .follow-badge-done { color: #047857; }
+:root[data-theme="light"] .follow-badge-progress { color: #b45309; }
+:root[data-theme="light"] .follow-badge-closed { color: #475569; }
