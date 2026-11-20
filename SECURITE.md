@@ -23,6 +23,7 @@ La menace principale est donc l'**exécution de code dans la page (XSS)** : elle
 | Confluence | Contenu de page échappé (pas d'injection XML / macro) ; le proxy retire cookies, `Origin` et `Referer`, ne renvoie pas les cookies de Confluence et ne relaie que l'instance configurée. |
 | E-mails `.eml` | Objet encodé (pas d'injection d'en-tête). |
 | Configuration Docker | `CONFLUENCE_URL` et `VOXAI_CSP_CONNECT_SRC` validées strictement : une valeur piégée empêche le démarrage au lieu d'injecter de la configuration nginx. |
+| Image Docker | Correctifs de sécurité Alpine appliqués à chaque construction (`apk upgrade`), image analysée par Trivy chaque semaine. |
 | Serveur | Version nginx masquée, pas de liste de répertoires, fichiers cachés et sources (Dockerfile, tests, package.json) non servis, aucun journal d'accès. |
 | Secrets | Clé Gemini envoyée en en-tête (jamais dans l'URL) ; données locales (`config.json`, `dictaphone.db`) exclues du dépôt. |
 | Politique « sans cloud » | `VOXAI_DISABLE_CLOUD=true` ne peut pas être contournée par un réglage enregistré. |

@@ -7,6 +7,10 @@ LABEL org.opencontainers.image.title="VoxAI" \
       org.opencontainers.image.licenses="AGPL-3.0" \
       org.opencontainers.image.source="https://github.com/josskrystlik-blip/VoXAI"
 
+# Correctifs de sécurité des paquets Alpine appliqués à chaque construction
+# (l'image de base peut contenir des versions vulnérables : openssl, brotli…)
+RUN apk upgrade --no-cache
+
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 COPY docker/20-voxai-security.sh /docker-entrypoint.d/20-voxai-security.sh
 COPY docker/30-voxai-defaults.sh /docker-entrypoint.d/30-voxai-defaults.sh
