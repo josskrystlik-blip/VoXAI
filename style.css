@@ -603,3 +603,57 @@ input[type="range"]::-webkit-slider-thumb:hover {
 /* Recherche dans la transcription */
 mark.search-hit { background: rgba(250, 204, 21, 0.35); color: inherit; border-radius: 3px; padding: 0 1px; }
 :root[data-theme="light"] mark.search-hit { background: rgba(250, 204, 21, 0.55); }
+
+/* Assistant IA global : panneau latéral disponible partout */
+.assistant-panel {
+  position: fixed;
+  top: 72px;
+  right: 16px;
+  bottom: 16px;
+  width: min(440px, calc(100vw - 32px));
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  border-radius: 20px;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+}
+.assistant-panel.hidden { display: none !important; }
+#assistantMessages { user-select: text; -webkit-user-select: text; }
+:root[data-theme="light"] .assistant-panel { box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18); }
+
+/* Proposition de correction de la synthèse */
+.proposal-card {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+  user-select: text;
+}
+.proposal-head { font-weight: 700; color: #c7d2fe; margin-bottom: 6px; }
+.proposal-target { font-size: 11px; color: #94a3b8; margin-bottom: 6px; }
+.proposal-changes { list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.proposal-changes li { display: flex; flex-direction: column; gap: 2px; font-size: 11px; }
+.proposal-label { font-weight: 600; color: #e2e8f0; }
+.proposal-before { color: #fda4af; text-decoration: line-through; opacity: 0.85; }
+.proposal-after { color: #6ee7b7; }
+.proposal-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; font-size: 11px; user-select: none; }
+.proposal-apply, .proposal-ignore { padding: 4px 12px; border-radius: 999px; font-size: 11px; font-weight: 600; transition: background 0.15s; }
+.proposal-apply { color: #fff; background: #059669; }
+.proposal-apply:hover { background: #10b981; }
+.proposal-apply:disabled { opacity: 0.6; }
+.proposal-ignore { color: #cbd5e1; background: rgba(148, 163, 184, 0.15); }
+.proposal-ignore:hover { background: rgba(148, 163, 184, 0.28); }
+:root[data-theme="light"] .proposal-card { background: rgba(238, 242, 255, 0.8); border-color: rgba(99, 102, 241, 0.3); }
+:root[data-theme="light"] .proposal-head { color: #3730a3; }
+:root[data-theme="light"] .proposal-target { color: #64748b; }
+:root[data-theme="light"] .proposal-label { color: #0f172a; }
+:root[data-theme="light"] .proposal-before { color: #be123c; }
+:root[data-theme="light"] .proposal-after { color: #047857; }
+:root[data-theme="light"] .proposal-ignore { color: #334155; background: rgba(148, 163, 184, 0.2); }
+
+/* Notifications décalées quand le panneau de l'assistant est ouvert */
+@media (min-width: 900px) {
+  body.assistant-open #toast { right: 472px; }
+}

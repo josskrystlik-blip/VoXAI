@@ -10,6 +10,7 @@
   'use strict';
 
   const DB_NAME = 'voxai';
+  const GLOBAL_CHAT = '__assistant_global__'; // historique de l'assistant global dans le magasin « chat »
   const DB_VERSION = 1;
 
   const DEFAULT_CONFIG = {
@@ -488,36 +489,124 @@ Chaque ligne de la transcription commence par son numéro (#1, #2...). ${REFS_RU
     return summarizeWithLocalLLM(transcription, audioFiles, cfg);
   }
 
-  async function chatWithRecording(userMsg, transcriptStr, summaryStr, history, cfg) {
-    const system = `Tu es l'assistant personnel de ce dictaphone.
-L'utilisateur te pose des questions à propos de cet enregistrement vocal.
+  const EMAIL_RULE = `Lorsqu'on te demande de rédiger un e-mail, réponds UNIQUEMENT avec l'e-mail : une première ligne « Objet : … », une ligne vide, puis le corps du message (formule d'appel, contenu, formule de politesse), sans commentaire avant ni après.`;
 
-=== TRANSCRIPTION DE L'ENREGISTREMENT ===
-${transcriptStr}
+  // Correction de la synthèse : l'IA propose, l'utilisateur valide dans l'interface
+  const EDIT_RULE = `Si l'utilisateur te demande de CORRIGER ou de MODIFIER la synthèse d'un enregistrement (résumé, décisions, actions, points clés, tags ou titre), réponds par une courte explication (1 à 3 phrases) des changements, PUIS termine par un bloc de code exactement de cette forme :
+\`\`\`voxai-summary
+{"recording_id": "<identifiant de l'enregistrement>", "title": "<titre corrigé, ou titre actuel>", "summary": {"executive": "…", "executive_refs": [1], "key_points": [{"text": "…", "refs": [2]}], "decisions": [{"text": "…", "refs": [3]}], "action_items": [{"task": "…", "assignee": "…", "deadline": "…", "status": "todo", "refs": [4]}], "tags": ["…"]}}
+\`\`\`
+Le bloc contient la synthèse COMPLÈTE corrigée : reprends à l'identique tout ce qui n'est pas concerné (textes, refs, status). N'ajoute ce bloc QUE pour une demande de modification, jamais pour une simple question. La modification ne sera appliquée qu'après validation par l'utilisateur.`;
 
-=== SYNTHÈSE DE L'ENREGISTREMENT ===
-${summaryStr}
-
-Réponds de manière précise, concise et serviable en te basant sur ce qui a été dit. Si l'information ne figure pas dans l'enregistrement, mentionne-le poliment.
-
-Lorsqu'on te demande de rédiger un e-mail, réponds UNIQUEMENT avec l'e-mail : une première ligne « Objet : … », une ligne vide, puis le corps du message (formule d'appel, contenu, formule de politesse), sans commentaire avant ni après.`;
-
+  /** Appel de discussion commun (Gemini ou LLM local compatible OpenAI). */
+  async function chatLLM(cfg, system, history, userMsg, ack) {
     if (cfg.provider === 'gemini') {
       const contents = [
         { role: 'user', parts: [{ text: system }] },
-        { role: 'model', parts: [{ text: 'Compris, je réponds à toutes vos questions concernant cet enregistrement.' }] },
+        { role: 'model', parts: [{ text: ack }] },
         ...history.map(h => ({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.content }] })),
         { role: 'user', parts: [{ text: userMsg }] }
       ];
       const { text } = await geminiGenerate(cfg, { contents },
-        ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'], 30000);
+        ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'], 60000);
       return text;
     }
     return localChat(cfg, [
       { role: 'system', content: system },
       ...history.map(h => ({ role: h.role, content: h.content })),
       { role: 'user', content: userMsg }
-    ], 0.3, 120000);
+    ], 0.3, 180000);
+  }
+
+  async function chatWithRecording(userMsg, rec, history, cfg) {
+    const system = `Tu es l'assistant personnel de ce dictaphone.
+L'utilisateur te pose des questions à propos de cet enregistrement vocal (identifiant : ${rec.id}, titre : « ${rec.title} »).
+
+=== TRANSCRIPTION DE L'ENREGISTREMENT (segments numérotés à partir de 1) ===
+${rec.transcription ? JSON.stringify(rec.transcription) : ''}
+
+=== SYNTHÈSE DE L'ENREGISTREMENT ===
+${rec.summary ? JSON.stringify(rec.summary) : ''}
+
+Réponds de manière précise, concise et serviable en te basant sur ce qui a été dit. Si l'information ne figure pas dans l'enregistrement, mentionne-le poliment.
+
+${EMAIL_RULE}
+
+${EDIT_RULE}`;
+    return chatLLM(cfg, system, history, userMsg, 'Compris, je réponds à toutes vos questions concernant cet enregistrement.');
+  }
+
+  /** Contexte de l'assistant global : toutes les réunions (synthèses) + transcription de celle qui est ouverte. */
+  async function globalContext(focusId) {
+    const recs = (await store.all('recordings')).sort((a, b) => b.created_at.localeCompare(a.created_at));
+    const compact = (r, full) => ({
+      id: r.id,
+      titre: r.title,
+      date: r.created_at,
+      duree_secondes: r.duration || 0,
+      statut: r.status,
+      synthese: r.summary ? (full ? r.summary : {
+        executive: r.summary.executive,
+        decisions: (r.summary.decisions || []).map(d => (d && d.text) || d),
+        action_items: (r.summary.action_items || []).map(a => ({ task: a.task, assignee: a.assignee, deadline: a.deadline, status: a.status || 'todo' }))
+      }) : null
+    });
+    let list = recs.map(r => compact(r, true));
+    if (JSON.stringify(list).length > 120000) list = recs.map(r => compact(r, false)); // grosses bases : synthèses abrégées
+    const focus = focusId ? recs.find(r => r.id === focusId) : null;
+    let focusText = '';
+    if (focus && Array.isArray(focus.transcription)) {
+      focusText = JSON.stringify(focus.transcription);
+      if (focusText.length > 150000) focusText = focusText.slice(0, 150000) + ' […tronquée]';
+    }
+    return { list, focus, focusText };
+  }
+
+  async function chatGlobal(userMsg, history, cfg, focusId) {
+    const { list, focus, focusText } = await globalContext(focusId);
+    const today = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    const system = `Tu es l'assistant IA de VoxAI, le dictaphone intelligent de l'utilisateur. Tu as accès à l'ensemble de ses réunions et notes vocales enregistrées. Nous sommes le ${today}.
+
+=== ENREGISTREMENTS (du plus récent au plus ancien) ===
+${JSON.stringify(list)}
+${focus ? `
+=== ENREGISTREMENT ACTUELLEMENT OUVERT : « ${focus.title} » (identifiant ${focus.id}) — transcription, segments numérotés à partir de 1 ===
+${focusText}
+` : ''}
+Réponds de manière précise et concise en t'appuyant uniquement sur ces enregistrements. Quand tu cites une réunion, indique son titre et sa date. Si l'information n'y figure pas, dis-le simplement. Tu peux faire des synthèses transversales (actions en cours, décisions sur un sujet, suivi d'un projet…).
+
+${EMAIL_RULE}
+
+${EDIT_RULE}`;
+    return chatLLM(cfg, system, history, userMsg, "Compris, je réponds à vos questions sur l'ensemble de vos enregistrements.");
+  }
+
+  /** Nettoie une synthèse proposée par l'IA (structure, refs valides, statut des actions conservé). */
+  function sanitizeSummary(proposed, previous, segmentCount) {
+    const p = (proposed && typeof proposed === 'object') ? proposed : {};
+    const prev = (previous && typeof previous === 'object') ? previous : {};
+    const refs = (r) => Array.isArray(r)
+      ? [...new Set(r.map(Number))].filter(n => Number.isInteger(n) && n >= 1 && n <= segmentCount) : [];
+    const list = (a) => (Array.isArray(a) ? a : []);
+    const items = (a) => list(a)
+      .map(k => (typeof k === 'string' ? { text: k, refs: [] } : { text: String((k && k.text) || ''), refs: refs(k && k.refs) }))
+      .filter(k => k.text.trim());
+    const prevStatus = new Map(list(prev.action_items).map(a => [String(a.task || '').trim().toLowerCase(), a.status]));
+    return {
+      executive: String(p.executive || ''),
+      executive_refs: refs(p.executive_refs),
+      key_points: items(p.key_points),
+      decisions: items(p.decisions),
+      action_items: list(p.action_items).map(a => ({
+        task: String((a && a.task) || ''),
+        assignee: String((a && a.assignee) || ''),
+        deadline: String((a && a.deadline) || ''),
+        status: (a && (a.status === 'done' || a.status === 'todo')) ? a.status
+          : (prevStatus.get(String((a && a.task) || '').trim().toLowerCase()) === 'done' ? 'done' : 'todo'),
+        refs: refs(a && a.refs)
+      })).filter(a => a.task.trim()),
+      tags: list(p.tags).map(t => String(t).trim()).filter(Boolean).slice(0, 20)
+    };
   }
 
   function corsHint(err) {
@@ -645,6 +734,36 @@ Lorsqu'on te demande de rédiger un e-mail, réponds UNIQUEMENT avec l'e-mail : 
       return json(200, { success: true, message: 'Configuration enregistrée avec succès !' });
     }
 
+    // Assistant global (toutes les réunions) : historique propre, rangé sous un identifiant réservé
+    if (path === '/api/assistant/history') {
+      if (method === 'DELETE') {
+        await tx(['chat'], 'readwrite', async t => {
+          const chat = t.objectStore('chat');
+          for (const key of await reqP(chat.index('recording_id').getAllKeys(GLOBAL_CHAT))) chat.delete(key);
+        });
+        return json(200, { success: true });
+      }
+      const history = (await store.byIndex('chat', 'recording_id', GLOBAL_CHAT))
+        .sort((a, b) => a.id - b.id).map(({ role, content, created_at }) => ({ role, content, created_at }));
+      return json(200, history);
+    }
+
+    if (path === '/api/assistant/chat' && method === 'POST') {
+      const { message = '', focus_id = null } = await req.json().catch(() => ({}));
+      const userMsg = String(message).trim();
+      if (!userMsg) return json(400, { error: 'Message vide' });
+      const history = (await store.byIndex('chat', 'recording_id', GLOBAL_CHAT))
+        .sort((a, b) => a.id - b.id).slice(-30).map(({ role, content }) => ({ role, content }));
+      await store.put('chat', { recording_id: GLOBAL_CHAT, role: 'user', content: userMsg, created_at: new Date().toISOString() });
+      try {
+        const reply = await chatGlobal(userMsg, history, await loadConfig(), focus_id);
+        await store.put('chat', { recording_id: GLOBAL_CHAT, role: 'assistant', content: reply, created_at: new Date().toISOString() });
+        return json(200, { reply });
+      } catch (err) {
+        return json(500, { error: `Erreur IA : ${err.message}` });
+      }
+    }
+
     if (path === '/api/local-models') {
       return json(200, await detectLocalModels(query.get('url') || 'http://localhost:11434/v1', query.get('key') || ''));
     }
@@ -761,17 +880,36 @@ Lorsqu'on te demande de rédiger un e-mail, réponds UNIQUEMENT avec l'e-mail : 
           .sort((a, b) => a.id - b.id).map(({ role, content }) => ({ role, content }));
         await store.put('chat', { recording_id: recId, role: 'user', content: userMsg, created_at: new Date().toISOString() });
         try {
-          const reply = await chatWithRecording(
-            userMsg,
-            rec.transcription ? JSON.stringify(rec.transcription) : '',
-            rec.summary ? JSON.stringify(rec.summary) : '',
-            history, await loadConfig()
-          );
+          const reply = await chatWithRecording(userMsg, rec, history, await loadConfig());
           await store.put('chat', { recording_id: recId, role: 'assistant', content: reply, created_at: new Date().toISOString() });
           return json(200, { reply });
         } catch (err) {
           return json(500, { error: `Erreur IA Chat: ${err.message}` });
         }
+      }
+
+      // Modification de la synthèse validée par l'utilisateur (avec historique pour annuler)
+      if (action === 'summary' && method === 'POST') {
+        const rec = await store.get('recordings', recId);
+        if (!rec) return json(404, { error: 'Enregistrement non trouvé' });
+        if (seg[4] === 'undo') {
+          const history = Array.isArray(rec.summary_history) ? rec.summary_history : [];
+          const last = history.pop();
+          if (!last) return json(400, { error: 'Aucune modification à annuler' });
+          await store.put('recordings', { ...rec, summary: last.summary, title: last.title, summary_history: history });
+          return json(200, { success: true, summary: last.summary, title: last.title });
+        }
+        const data = await req.json().catch(() => ({}));
+        const segments = Array.isArray(rec.transcription) ? rec.transcription.length : 0;
+        const summary = sanitizeSummary(data.summary, rec.summary, segments);
+        if (!summary.executive.trim() && !summary.decisions.length && !summary.action_items.length && !summary.key_points.length) {
+          return json(400, { error: 'Synthèse proposée vide ou illisible' });
+        }
+        const title = String(data.title || '').trim() || rec.title;
+        const summary_history = [...(Array.isArray(rec.summary_history) ? rec.summary_history : []),
+          { summary: rec.summary, title: rec.title, saved_at: new Date().toISOString() }].slice(-10);
+        await store.put('recordings', { ...rec, summary, title, summary_history });
+        return json(200, { success: true, summary, title });
       }
 
       if (action === 'actions' && method === 'POST') {
