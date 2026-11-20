@@ -183,7 +183,8 @@
 
   function pageUrl(page) {
     const links = (page && page._links) || {};
-    return links.base && links.webui ? links.base + links.webui : '';
+    const url = links.base && links.webui ? String(links.base) + String(links.webui) : '';
+    return /^https?:\/\//i.test(url) ? url : ''; // jamais de lien javascript: ou data:
   }
 
   // ============================================================================

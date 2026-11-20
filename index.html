@@ -5,28 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>VoxAI — Dictaphone Intelligent & Transcription IA</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22%20width=%2216%22%20height=%2216%22><text y=%2214%22 font-size=%2214%22>🎙️</text></svg>">
-  <!-- Thème appliqué avant l'affichage (évite un flash) : auto = réglage du système, ou clair / sombre -->
-  <script>
-    (function () {
-      var KEY = 'voxai_theme';
-      var media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
-      function pref() { try { return localStorage.getItem(KEY) || 'auto'; } catch (e) { return 'auto'; } }
-      function apply() {
-        var p = pref();
-        var light = p === 'light' || (p === 'auto' && media && media.matches);
-        document.documentElement.setAttribute('data-theme', light ? 'light' : 'dark');
-        var meta = document.querySelector('meta[name="color-scheme"]');
-        if (meta) meta.content = light ? 'light' : 'dark';
-      }
-      window.VoxTheme = {
-        get: pref,
-        set: function (p) { try { localStorage.setItem(KEY, p); } catch (e) {} apply(); document.dispatchEvent(new CustomEvent('voxai:theme', { detail: p })); },
-        apply: apply
-      };
-      if (media && media.addEventListener) media.addEventListener('change', function () { if (pref() === 'auto') apply(); });
-      apply();
-    })();
-  </script>
+  <!-- Sécurité : seuls les scripts de l'application peuvent s'exécuter (aucun script en ligne ni externe).
+       connect-src reste ouvert car les serveurs IA / Confluence sont configurables. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self' https: http:; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <!-- Thème appliqué avant l'affichage (évite un flash) -->
+  <script src="theme-init.js"></script>
   <meta name="color-scheme" content="dark light">
   <!-- Styles et polices servis localement : aucune ressource externe, l'interface fonctionne sans Internet -->
   <link rel="stylesheet" href="vendor/fonts.css">
@@ -522,7 +505,7 @@
           <div>
             <div class="flex items-center justify-between mb-1.5">
               <label class="text-xs font-semibold text-slate-300">Clé d'API Gemini</label>
-              <a href="https://aistudio.google.com/apikey" target="_blank" class="text-[11px] text-indigo-400 hover:underline font-medium">Obtenir une clé gratuite ↗</a>
+              <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" class="text-[11px] text-indigo-400 hover:underline font-medium">Obtenir une clé gratuite ↗</a>
             </div>
             <div class="relative">
               <input type="password" id="geminiApiKeyInput" placeholder="AIzaSy..." class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500 font-mono">

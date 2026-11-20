@@ -6,7 +6,9 @@
   "scripts": {
     "build:css": "tailwindcss -c tailwind.config.js -i src/tailwind.css -o vendor/tailwind.css --minify",
     "build:fonts": "node scripts/copy-fonts.js",
-    "build": "npm run build:fonts && npm run build:css"
+    "build": "npm run build:fonts && npm run build:css",
+    "test:security": "bash tests/security/static.sh && node tests/security/browser.test.js",
+    "test:security:docker": "bash tests/security/docker.sh"
   },
   "devDependencies": {
     "@fontsource-variable/jetbrains-mono": "5.2.5",
