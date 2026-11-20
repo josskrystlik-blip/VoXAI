@@ -100,6 +100,10 @@
   // Absents sur GitHub Pages ou en local : on garde alors les valeurs intégrées.
   let serverDefaultsPromise = null;
   function loadServerDefaults() {
+    if (!serverDefaultsPromise && location.protocol === 'file:') {
+      // Fichier ouvert directement (file://) : pas de serveur, donc pas de réglages imposés.
+      serverDefaultsPromise = Promise.resolve({ config: {}, policy: {} });
+    }
     if (!serverDefaultsPromise) {
       serverDefaultsPromise = fetch('voxai-defaults.json', { cache: 'no-store' })
         .then(res => (res.ok ? res.json() : {}))
@@ -226,32 +230,51 @@
     }
   }
 
-  /** Appelle Gemini en essayant les modèles de secours en cas de 503/429/404. */
-  async function geminiGenerate(cfg, payload, fallbacks, timeoutMs, { strict = true } = {}) {
+  // Nouvelles tentatives quand Gemini est saturé (503/429) : délais avant le 2e puis le 3e tour.
+  const GEMINI_RETRY_DELAYS = [4000, 12000];
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+  /**
+   * Appelle Gemini en essayant les modèles de secours en cas de 503/429/404.
+   * Si tous les modèles sont saturés (503/429), refait un tour après une pause.
+   */
+  async function geminiGenerate(cfg, payload, fallbacks, timeoutMs, { strict = true, retry = true } = {}) {
     const apiKey = (cfg.gemini_api_key || '').trim();
     if (!apiKey) throw new Error('Clé API Gemini manquante. Veuillez la configurer dans les paramètres.');
     const models = modelsWithFallbacks(cfg.gemini_model || 'gemini-3.5-flash-lite', fallbacks);
     let lastErr = '';
-    for (const m of models) {
-      try {
-        const res = await fetchWithTimeout(`${GEMINI_BASE}/${m}:generateContent`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-          body: JSON.stringify(payload)
-        }, timeoutMs);
-        if (!res.ok) {
-          const body = await res.text();
-          try { lastErr = JSON.parse(body).error.message || body; } catch { lastErr = body; }
-          lastErr = `Modèle ${m} (HTTP ${res.status}): ${lastErr}`;
-          if ([503, 429, 404].includes(res.status) || !strict) continue;
-          throw Object.assign(new Error(lastErr), { fatal: true });
+    const rounds = retry ? GEMINI_RETRY_DELAYS.length : 0;
+    for (let round = 0; round <= rounds; round++) {
+      if (round > 0) await sleep(GEMINI_RETRY_DELAYS[round - 1]);
+      let saturated = true; // tous les échecs de ce tour sont des 503/429
+      for (const m of models) {
+        try {
+          const res = await fetchWithTimeout(`${GEMINI_BASE}/${m}:generateContent`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+            body: JSON.stringify(payload)
+          }, timeoutMs);
+          if (!res.ok) {
+            const body = await res.text();
+            try { lastErr = JSON.parse(body).error.message || body; } catch { lastErr = body; }
+            lastErr = `Modèle ${m} (HTTP ${res.status}): ${lastErr}`;
+            if (res.status !== 503 && res.status !== 429) saturated = false;
+            if ([503, 429, 404].includes(res.status) || !strict) continue;
+            throw Object.assign(new Error(lastErr), { fatal: true });
+          }
+          const data = await res.json();
+          return { text: data.candidates[0].content.parts[0].text, model: m };
+        } catch (err) {
+          if (err.fatal) throw err;
+          saturated = false;
+          lastErr = err.message;
         }
-        const data = await res.json();
-        return { text: data.candidates[0].content.parts[0].text, model: m };
-      } catch (err) {
-        if (err.fatal) throw err;
-        lastErr = err.message;
       }
+      if (!saturated) break;
+    }
+    if (/HTTP (503|429)/.test(lastErr)) {
+      throw new Error('Les serveurs Gemini sont momentanément saturés (Google renvoie « 503 / 429 »). ' +
+        'Réessayez dans quelques minutes, ou utilisez votre LLM local dans les paramètres. Détail : ' + lastErr);
     }
     throw new Error(lastErr || 'Échec de l’appel Gemini');
   }
@@ -750,7 +773,7 @@ ${EDIT_RULE}`;
       try {
         const { text, model } = await geminiGenerate(cfg, {
           contents: [{ parts: [{ text: 'Réponds uniquement par: OK' }] }]
-        }, ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'], 12000);
+        }, ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'], 12000, { retry: false });
         const note = model !== requested
           ? ` (Note: ${requested} étant temporairement saturé chez Google, bascule automatique sur ${model})` : '';
         return { success: true, message: `Connexion Gemini réussie avec ${model} ! Réponse: ${text.trim()}${note}` };

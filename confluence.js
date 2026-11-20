@@ -20,6 +20,8 @@
   let proxyEnabled = null;
   async function detectProxy() {
     if (proxyEnabled !== null) return proxyEnabled;
+    // Fichier ouvert directement (file://) : pas de serveur, donc pas de proxy.
+    if (location.protocol === 'file:') return (proxyEnabled = false);
     try {
       const res = await fetch('confluence-proxy.json', { cache: 'no-store' });
       proxyEnabled = res.ok && (await res.json()).enabled === true;
