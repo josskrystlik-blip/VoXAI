@@ -185,6 +185,11 @@ docker run -d -p 8080:80 -e CONFLUENCE_URL=https://confluence.mon-entreprise.fr 
 
 Sans proxy (GitHub Pages), l'administrateur Confluence doit autoriser l'origine de VoxAI en CORS.
 
+## 💬 Assistant IA global et correction des synthèses
+
+- Bouton **💬 Assistant** dans l'en-tête, disponible partout : l'assistant connaît **toutes vos réunions** (titres, dates, synthèses, actions) et la transcription complète de celle qui est ouverte. Questions transversales (« quelles actions sont encore à faire ? »), e-mails, comparaisons entre réunions.
+- **Corriger une synthèse** depuis l'assistant global ou l'onglet « Assistant IA » d'un enregistrement : décrivez l'erreur, l'IA propose une synthèse corrigée et VoxAI affiche **la liste exacte des changements**. Rien n'est modifié sans **Appliquer** ; **Annuler** rétablit la version précédente (10 versions conservées). Les actions cochées et les liens vers la transcription sont préservés.
+
 ## 🎨 Apparence, recherche et sauvegarde
 
 - **Thème clair / sombre** : bouton dans l'en-tête, qui alterne entre **Auto** (suit le réglage clair ou sombre du système), **Clair** et **Sombre**. Le choix est mémorisé dans le navigateur.

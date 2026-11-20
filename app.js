@@ -752,6 +752,7 @@ async function loadRecordings() {
     const res = await fetch('/api/recordings');
     state.recordings = await res.json();
     renderRecordingsList();
+    updateAssistantContext();
   } catch (err) {
     console.error('Erreur chargement recordings:', err);
   }
@@ -923,6 +924,7 @@ function renderRecordingDetails() {
   elements.playerPauseIcon.classList.add('hidden');
 
   updateDownloadAudioBtn();
+  updateAssistantContext();
 
   // Render Tabs
   const search = document.getElementById('searchTranscript');
@@ -1224,7 +1226,7 @@ function renderChatTab(history) {
   });
 }
 
-function appendChatMessage(role, content) {
+function appendChatMessage(role, content, container = elements.chatMessages) {
   const isUser = role === 'user';
   const div = document.createElement('div');
   div.className = `p-3 rounded-xl text-xs leading-relaxed max-w-[85%] ${
@@ -1235,12 +1237,234 @@ function appendChatMessage(role, content) {
   if (isUser) {
     div.innerHTML = escapeHtml(content).replace(/\n/g, '<br>');
   } else {
+    // Une éventuelle proposition de correction de la synthèse est retirée du texte et affichée à part
+    const { text, proposal, invalid } = parseAssistantReply(content);
     // Markdown simple (gras, listes) ; le texte est échappé avant mise en forme
-    div.innerHTML = `<div class="chat-md">${markdownToHtml(content)}</div>`;
-    div.appendChild(buildChatActions(content));
+    div.innerHTML = `<div class="chat-md">${markdownToHtml(text || (proposal ? 'Voici la correction proposée :' : ''))}</div>`;
+    if (proposal) div.appendChild(buildProposalCard(proposal));
+    if (invalid) {
+      const warn = document.createElement('p');
+      warn.className = 'text-[11px] text-amber-400 mt-2';
+      warn.textContent = "⚠️ La proposition de correction de l'IA est illisible : reformulez votre demande.";
+      div.appendChild(warn);
+    }
+    if (text) div.appendChild(buildChatActions(text));
   }
-  elements.chatMessages.appendChild(div);
-  elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+// ==============================================================================
+// Corrections de la synthèse proposées par l'assistant (validées par l'utilisateur)
+// ==============================================================================
+
+/** Sépare le texte de la réponse et le bloc ```voxai-summary``` éventuel. */
+function parseAssistantReply(content) {
+  const match = String(content).match(/```\s*voxai-summary\s*([\s\S]*?)```/i);
+  if (!match) return { text: content, proposal: null };
+  const text = String(content).replace(match[0], '').trim();
+  try {
+    const raw = match[1].trim();
+    const data = JSON.parse(raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1));
+    if (!data || !data.recording_id || !data.summary || typeof data.summary !== 'object') throw new Error('incomplet');
+    return { text, proposal: data };
+  } catch {
+    return { text, proposal: null, invalid: true };
+  }
+}
+
+const itemTextOf = (i) => String((i && typeof i === 'object') ? (i.text || '') : (i || '')).trim();
+
+/** Liste lisible des différences entre la synthèse actuelle et la proposition. */
+function summaryChanges(current, proposed, currentTitle, proposedTitle) {
+  const cur = current || {}, next = proposed || {};
+  const changes = [];
+  if (proposedTitle && proposedTitle.trim() && proposedTitle.trim() !== (currentTitle || '').trim()) {
+    changes.push({ kind: 'edit', label: 'Titre', before: currentTitle, after: proposedTitle.trim() });
+  }
+  if ((cur.executive || '').trim() !== (next.executive || '').trim()) {
+    changes.push({ kind: 'edit', label: 'Résumé exécutif', before: cur.executive || '', after: next.executive || '' });
+  }
+  const diffList = (label, a, b) => {
+    const before = (a || []).map(itemTextOf).filter(Boolean), after = (b || []).map(itemTextOf).filter(Boolean);
+    after.filter(t => !before.includes(t)).forEach(t => changes.push({ kind: 'add', label, after: t }));
+    before.filter(t => !after.includes(t)).forEach(t => changes.push({ kind: 'del', label, before: t }));
+  };
+  diffList('Décision', cur.decisions, next.decisions);
+  diffList('Point clé', cur.key_points, next.key_points);
+  const describe = (a) => [a.task, a.assignee && `👤 ${a.assignee}`, a.deadline && `📅 ${a.deadline}`].filter(Boolean).join(' · ');
+  const curActions = cur.action_items || [], nextActions = next.action_items || [];
+  const key = (a) => String(a.task || '').trim().toLowerCase();
+  nextActions.forEach(a => {
+    const old = curActions.find(o => key(o) === key(a));
+    if (!old) changes.push({ kind: 'add', label: 'Action', after: describe(a) });
+    else if (describe(old) !== describe(a)) changes.push({ kind: 'edit', label: 'Action', before: describe(old), after: describe(a) });
+  });
+  curActions.filter(o => !nextActions.some(a => key(a) === key(o)))
+    .forEach(o => changes.push({ kind: 'del', label: 'Action', before: describe(o) }));
+  const tagsBefore = (cur.tags || []).join(', '), tagsAfter = (next.tags || []).join(', ');
+  if (tagsBefore !== tagsAfter) changes.push({ kind: 'edit', label: 'Tags', before: tagsBefore, after: tagsAfter });
+  return changes;
+}
+
+async function refreshAfterSummaryChange(recId) {
+  await loadRecordings();
+  if (state.activeRecording && state.activeRecording.id === recId) {
+    const fresh = await (await fetch(`/api/recordings/${recId}`)).json();
+    state.activeRecording.summary = fresh.summary;
+    state.activeRecording.title = fresh.title;
+    elements.detailTitle.textContent = fresh.title;
+    renderSummaryTab(fresh.summary);
+  }
+}
+
+function buildProposalCard(proposal) {
+  const card = document.createElement('div');
+  card.className = 'proposal-card';
+  card.innerHTML = '<div class="proposal-head">✏️ Correction proposée de la synthèse</div><div class="proposal-body text-slate-400">Comparaison avec la synthèse actuelle…</div>';
+  const body = card.querySelector('.proposal-body');
+
+  (async () => {
+    const res = await fetch(`/api/recordings/${encodeURIComponent(proposal.recording_id)}`);
+    if (!res.ok) { body.textContent = "Enregistrement introuvable : la proposition ne peut pas être appliquée."; return; }
+    const rec = await res.json();
+    const changes = summaryChanges(rec.summary, proposal.summary, rec.title, proposal.title);
+    const target = `<div class="proposal-target">Enregistrement : <strong>${escapeHtml(rec.title)}</strong></div>`;
+    if (!changes.length) {
+      body.innerHTML = target + '<p class="text-emerald-400">✓ La synthèse actuelle correspond déjà à cette proposition.</p>';
+      return;
+    }
+    const icon = { add: '➕', del: '➖', edit: '✏️' };
+    body.innerHTML = target + '<ul class="proposal-changes">' + changes.map(c => `<li class="proposal-${c.kind}">
+        <span class="proposal-label">${icon[c.kind]} ${escapeHtml(c.label)}</span>
+        ${c.before != null && c.kind !== 'add' ? `<span class="proposal-before">${escapeHtml(c.before || '(vide)')}</span>` : ''}
+        ${c.after != null && c.kind !== 'del' ? `<span class="proposal-after">${escapeHtml(c.after || '(vide)')}</span>` : ''}
+      </li>`).join('') + '</ul>';
+    const bar = document.createElement('div');
+    bar.className = 'proposal-actions';
+    const btn = (label, cls, onClick) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = cls; b.textContent = label; b.addEventListener('click', onClick);
+      bar.appendChild(b); return b;
+    };
+    const apply = btn('✅ Appliquer la correction', 'proposal-apply', async () => {
+      apply.disabled = true;
+      const r = await fetch(`/api/recordings/${encodeURIComponent(proposal.recording_id)}/summary`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ summary: proposal.summary, title: proposal.title })
+      });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) { apply.disabled = false; showToast('Correction refusée : ' + (data.error || r.status), '⚠️'); return; }
+      await refreshAfterSummaryChange(proposal.recording_id);
+      bar.innerHTML = '<span class="text-emerald-400 font-semibold">✓ Correction appliquée</span>';
+      btn('↩️ Annuler', 'proposal-ignore', async () => {
+        const u = await fetch(`/api/recordings/${encodeURIComponent(proposal.recording_id)}/summary/undo`, { method: 'POST' });
+        if (!u.ok) { showToast("Impossible d'annuler", '⚠️'); return; }
+        await refreshAfterSummaryChange(proposal.recording_id);
+        bar.innerHTML = '<span class="text-slate-400">↩️ Correction annulée : la synthèse précédente est rétablie.</span>';
+        showToast('Synthèse précédente rétablie', '↩️');
+      });
+      showToast('Synthèse corrigée', '✏️');
+    });
+    btn('Ignorer', 'proposal-ignore', () => { bar.innerHTML = '<span class="text-slate-500">Proposition ignorée.</span>'; });
+    card.appendChild(bar);
+  })().catch(err => { body.textContent = 'Erreur : ' + err.message; });
+  return card;
+}
+
+// ==============================================================================
+// Assistant global : disponible partout, sur l'ensemble des réunions
+// ==============================================================================
+
+const assistant = { open: false, loaded: false, busy: false };
+
+function assistantEls() {
+  return {
+    panel: document.getElementById('assistantPanel'),
+    messages: document.getElementById('assistantMessages'),
+    input: document.getElementById('assistantInput'),
+    context: document.getElementById('assistantContext')
+  };
+}
+
+function updateAssistantContext() {
+  const { context } = assistantEls();
+  if (!context) return;
+  const n = (state.recordings || []).length;
+  const rec = state.activeRecording && !elements.detailsView.classList.contains('hidden') ? state.activeRecording : null;
+  context.innerHTML = `Contexte : <strong>${n} enregistrement${n > 1 ? 's' : ''}</strong>` +
+    (rec ? ` · ouvert : <strong>${escapeHtml(rec.title)}</strong>` : '');
+}
+
+async function loadAssistantHistory() {
+  const { messages } = assistantEls();
+  const history = await (await fetch('/api/assistant/history')).json();
+  messages.innerHTML = `<div class="p-3 rounded-xl bg-slate-800/40 border border-slate-700/40 text-xs text-slate-300">
+    Bonjour ! Je connais toutes vos réunions enregistrées. Posez une question transversale, demandez un e-mail, ou signalez une erreur dans une synthèse pour que je la corrige.</div>`;
+  history.forEach(m => appendChatMessage(m.role, m.content, messages));
+  assistant.loaded = true;
+}
+
+function toggleAssistant(force) {
+  const { panel, input } = assistantEls();
+  assistant.open = typeof force === 'boolean' ? force : !assistant.open;
+  panel.classList.toggle('hidden', !assistant.open);
+  document.body.classList.toggle('assistant-open', assistant.open); // décale les notifications
+  document.getElementById('assistantToggleBtn').setAttribute('aria-expanded', String(assistant.open));
+  if (assistant.open) {
+    updateAssistantContext();
+    if (!assistant.loaded) loadAssistantHistory();
+    setTimeout(() => input.focus(), 50);
+  }
+}
+
+async function sendAssistantMessage(e) {
+  if (e) e.preventDefault();
+  const { messages, input } = assistantEls();
+  const msg = input.value.trim();
+  if (!msg || assistant.busy) return;
+  input.value = '';
+  assistant.busy = true;
+  appendChatMessage('user', msg, messages);
+  const loading = document.createElement('div');
+  loading.className = 'p-3 rounded-xl text-xs mr-auto bg-slate-800/70 text-slate-400 border border-slate-700/60 animate-pulse';
+  loading.textContent = "L'IA réfléchit…";
+  messages.appendChild(loading);
+  messages.scrollTop = messages.scrollHeight;
+  const focus = state.activeRecording && !elements.detailsView.classList.contains('hidden') ? state.activeRecording.id : null;
+  try {
+    const res = await fetch('/api/assistant/chat', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: msg, focus_id: focus })
+    });
+    const data = await res.json();
+    loading.remove();
+    appendChatMessage('assistant', data.reply || ('Erreur : ' + (data.error || 'pas de réponse')), messages);
+  } catch (err) {
+    loading.remove();
+    appendChatMessage('assistant', 'Erreur de communication : ' + err.message, messages);
+  } finally {
+    assistant.busy = false;
+  }
+}
+
+function setupAssistant() {
+  const { panel, input } = assistantEls();
+  if (!panel) return;
+  document.getElementById('assistantToggleBtn').addEventListener('click', () => toggleAssistant());
+  document.getElementById('assistantCloseBtn').addEventListener('click', () => toggleAssistant(false));
+  document.getElementById('assistantForm').addEventListener('submit', sendAssistantMessage);
+  document.getElementById('assistantClearBtn').addEventListener('click', async () => {
+    if (!confirm("Effacer la conversation de l'assistant global ?")) return;
+    await fetch('/api/assistant/history', { method: 'DELETE' });
+    loadAssistantHistory();
+  });
+  panel.querySelectorAll('.assistant-chip').forEach(chip => chip.addEventListener('click', () => {
+    if (chip.dataset.prefill) { input.value = chip.dataset.prefill; input.focus(); return; }
+    input.value = chip.textContent.trim();
+    sendAssistantMessage();
+  }));
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && assistant.open) toggleAssistant(false); });
 }
 
 // ==============================================================================
@@ -1998,10 +2222,12 @@ function setupEventListeners() {
   elements.chatForm.addEventListener('submit', sendChatMessage);
   document.querySelectorAll('.chat-prompt-chip').forEach(chip => {
     chip.addEventListener('click', () => {
+      if (chip.dataset.prefill) { elements.chatInput.value = chip.dataset.prefill; elements.chatInput.focus(); return; }
       elements.chatInput.value = chip.textContent.trim();
       sendChatMessage();
     });
   });
+  setupAssistant();
 
   // Settings
   elements.openSettingsBtn.addEventListener('click', openSettingsModal);
