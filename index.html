@@ -115,6 +115,12 @@
       <div id="recordingsList" class="flex-1 overflow-y-auto px-3 py-1 space-y-1.5">
         <!-- Rempli dynamiquement en JS -->
       </div>
+
+      <!-- Version (à mettre à jour à chaque release : la release vérifie qu'elle correspond au tag) -->
+      <div class="px-4 py-2.5 border-t border-white/[0.06] flex items-center justify-between text-[11px] text-slate-500">
+        <span>VoxAI <span id="appVersion" class="font-mono">v1.9.0</span></span>
+        <button type="button" id="versionsBtn" class="font-semibold text-indigo-400 hover:text-indigo-300 hover:underline transition" title="Historique des versions">Nouveautés</button>
+      </div>
     </aside>
 
     <!-- ==================== CENTER WORKSPACE ==================== -->
@@ -739,6 +745,135 @@
 
   <!-- Notification Toast -->
   <!-- SÉRIES DE RÉUNIONS -->
+  <!-- ==================== NOUVEAUTÉS (historique des versions) ==================== -->
+  <div id="versionsModal" class="fixed inset-0 bg-black/75 backdrop-blur-md z-50 items-center justify-center p-4 hidden" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="versionsTitle">
+    <div class="glass-panel rounded-3xl w-full max-w-2xl shadow-2xl flex flex-col overflow-hidden border border-white/15 max-h-[92vh]">
+      <div class="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <span class="text-xl" aria-hidden="true">📋</span>
+          <h3 id="versionsTitle" class="text-base font-bold text-white tracking-tight">Nouveautés</h3>
+        </div>
+        <button id="versionsCloseBtn" type="button" class="text-slate-400 hover:text-white p-1 rounded-lg transition" aria-label="Fermer">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div id="versionsList" class="overflow-y-auto p-6 space-y-5">
+        <section class="version-entry">
+          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.9.0</span> — Version affichée et historique <span class="ml-1.5 px-1.5 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 text-[10px] font-semibold align-middle">Version actuelle</span></h4>
+          <p class="text-[11px] text-slate-500 mb-1.5">20 novembre 2026</p>
+          <ul class="list-disc pl-5 space-y-1 text-xs text-slate-300">
+            <li>Numéro de version affiché en bas de la barre latérale.</li>
+            <li>Fenêtre « Nouveautés » : contenu de chaque version.</li>
+          </ul>
+        </section>
+        <section class="version-entry">
+          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.8.1</span> — Fiabilité Gemini et GitHub Pages</h4>
+          <p class="text-[11px] text-slate-500 mb-1.5">20 novembre 2026</p>
+          <ul class="list-disc pl-5 space-y-1 text-xs text-slate-300">
+            <li>Gemini saturé (erreur 503/429) : deux nouvelles tentatives automatiques, puis un message clair (réessayer plus tard ou passer au LLM local).</li>
+            <li>Plus d’erreurs dans la console quand la page est ouverte directement depuis le disque (file://).</li>
+            <li>Publication automatique de l’application sur GitHub Pages.</li>
+          </ul>
+        </section>
+        <section class="version-entry">
+          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.8.0</span> — Séries de réunions</h4>
+          <p class="text-[11px] text-slate-500 mb-1.5">20 novembre 2026</p>
+          <ul class="list-disc pl-5 space-y-1 text-xs text-slate-300">
+            <li>Séries : nom, type de réunion, participants (nom, e-mail, alias) et page Confluence parente.</li>
+            <li>Série choisie à l’enregistrement ou à l’import, titre « série — date », filtre de la liste.</li>
+            <li>Participants et type de réunion transmis à l’IA ; un nom d’orateur corrigé est réutilisé aux réunions suivantes.</li>
+            <li>Confluence : publication préremplie sous la page de la série, avec étiquette.</li>
+            <li>E-mail aux participants : destinataires préremplis (Outlook, Outlook Web, Gmail, messagerie par défaut).</li>
+          </ul>
+        </section>
+        <section class="version-entry">
+          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.7.0</span> — Assistant IA global et sécurité</h4>
+          <p class="text-[11px] text-slate-500 mb-1.5">20 novembre 2026</p>
+          <ul class="list-disc pl-5 space-y-1 text-xs text-slate-300">
+            <li>Assistant IA accessible partout dans l’application ; il peut corriger la synthèse à votre demande.</li>
+            <li>Correctifs de sécurité (injection via une réponse d’IA ou une sauvegarde, liens, en-têtes) et politique de sécurité stricte.</li>
+            <li>Tests de sécurité automatiques sur chaque modification ; image Docker à jour des correctifs Alpine.</li>
+          </ul>
+        </section>
+        <section class="version-entry">
+          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.6.1</span> — Confluence : transcription jointe</h4>
+          <p class="text-[11px] text-slate-500 mb-1.5">20 novembre 2026</p>
+          <ul class="list-disc pl-5 space-y-1 text-xs text-slate-300">
+            <li>La transcription intégrale est jointe à la page Confluence (fichier .txt), avec vérification après envoi.</li>
+          </ul>
+        </section>
+        <section class="version-entry">
+          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.6.0</span> — Thème, recherche, actions, sauvegarde</h4>
+          <p class="text-[11px] text-slate-500 mb-1.5">20 novembre 2026</p>
+          <ul class="list-disc pl-5 space-y-1 text-xs text-slate-300">
+            <li>Thème clair, sombre ou automatique.</li>
+            <li>Recherche dans la transcription (sans tenir compte des accents), avec surlignage.</li>
+            <li>Actions du plan d’action cochables, reprises dans la copie et dans Confluence.</li>
+            <li>Sauvegarde complète dans un fichier .voxai et restauration sur un autre poste.</li>
+            <li>Téléchargement de l’enregistrement audio.</li>
+          </ul>
+        </section>
+        <section class="version-entry">
+          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.5.0</span> — Déploiement en entreprise</h4>
+          <p class="text-[11px] text-slate-500 mb-1.5">19 novembre 2026</p>
+          <ul class="list-disc pl-5 space-y-1 text-xs text-slate-300">
+            <li>Interface entièrement servie par l’application : aucun accès Internet nécessaire.</li>
+            <li>Image Docker : réglages par défaut fixés par l’administrateur, mode « sans cloud » imposable.</li>
+          </ul>
+        </section>
+        <section class="version-entry">
+          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.4.0</span> — E-mail et transcription en direct</h4>
+          <p class="text-[11px] text-slate-500 mb-1.5">12 novembre 2026</p>
+          <ul class="list-disc pl-5 space-y-1 text-xs text-slate-300">
+            <li>Assistant IA : copie des réponses et des e-mails prêts à envoyer.</li>
+            <li>« Créer le mail » dans Outlook (application ou web), Gmail ou la messagerie par défaut.</li>
+            <li>Transcription en direct pendant l’enregistrement (Chrome / Edge).</li>
+            <li>Correctif : « Annuler » n’enregistre plus l’audio.</li>
+          </ul>
+        </section>
+        <section class="version-entry">
+          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.3.1</span> — Maintenance</h4>
+          <p class="text-[11px] text-slate-500 mb-1.5">12 novembre 2026</p>
+          <ul class="list-disc pl-5 space-y-1 text-xs text-slate-300">
+            <li>Chaîne de publication mise à jour (Node.js 24).</li>
+          </ul>
+        </section>
+        <section class="version-entry">
+          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.3.0</span> — Publication dans Confluence</h4>
+          <p class="text-[11px] text-slate-500 mb-1.5">12 novembre 2026</p>
+          <ul class="list-disc pl-5 space-y-1 text-xs text-slate-300">
+            <li>Connexion par jeton d’accès personnel (PAT) ou jeton d’API Cloud.</li>
+            <li>Choix de l’espace, navigation dans les pages, création ou mise à jour du compte rendu.</li>
+          </ul>
+        </section>
+        <section class="version-entry">
+          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.2.0</span> — Serveurs IA d’entreprise</h4>
+          <p class="text-[11px] text-slate-500 mb-1.5">12 novembre 2026</p>
+          <ul class="list-disc pl-5 space-y-1 text-xs text-slate-300">
+            <li>Compatibilité avec les serveurs d’entreprise compatibles OpenAI (dont gpt-oss-120b), avec clé d’API.</li>
+          </ul>
+        </section>
+        <section class="version-entry">
+          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.1.0</span> — Synthèse reliée à la transcription</h4>
+          <p class="text-[11px] text-slate-500 mb-1.5">12 novembre 2026</p>
+          <ul class="list-disc pl-5 space-y-1 text-xs text-slate-300">
+            <li>Chaque point de la synthèse renvoie au passage de la transcription correspondant.</li>
+            <li>Bouton « Copier le résumé ».</li>
+            <li>Renommage des orateurs.</li>
+          </ul>
+        </section>
+        <section class="version-entry">
+          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.0.0</span> — Première version</h4>
+          <p class="text-[11px] text-slate-500 mb-1.5">12 novembre 2026</p>
+          <ul class="list-disc pl-5 space-y-1 text-xs text-slate-300">
+            <li>Application web sans serveur : toutes les données restent dans le navigateur.</li>
+            <li>Hébergeable sur GitHub Pages ; image Docker et archives livrées à chaque version.</li>
+          </ul>
+        </section>
+      </div>
+    </div>
+  </div>
+
   <div id="seriesModal" class="fixed inset-0 bg-black/75 backdrop-blur-md z-50 items-center justify-center p-4 hidden" style="display: none;">
     <div class="glass-panel rounded-3xl w-full max-w-3xl shadow-2xl flex flex-col overflow-hidden border border-white/15 max-h-[92vh]">
       <div class="px-6 py-4 border-b border-white/10 flex items-center justify-between">
