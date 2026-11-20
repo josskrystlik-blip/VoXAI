@@ -235,7 +235,7 @@
     const actions = s.action_items || [];
     if (actions.length) {
       h += `<h2>Plan d'action</h2><ac:task-list>${actions.map(a => {
-        const meta = [a.assignee ? `👤 ${x(a.assignee)}` : '', a.deadline ? `📅 ${x(a.deadline)}` : ''].filter(Boolean).join(' — ');
+        const meta = [a.assignee ? `👤 ${x(a.assignee)}` : '', a.deadline ? `📅 ${x(deadlineInfo(a.deadline).long)}` : ''].filter(Boolean).join(' — ');
         return `<ac:task><ac:task-status>${a.status === 'done' ? 'complete' : 'incomplete'}</ac:task-status><ac:task-body>${x(a.task)}${meta ? ` — ${meta}` : ''}</ac:task-body></ac:task>`;
       }).join('')}</ac:task-list>`;
     }
@@ -449,7 +449,7 @@
     $('cfCreateOptions').classList.toggle('hidden', action !== 'create');
     $('cfUpdateOptions').classList.toggle('hidden', action !== 'update');
     $('cfPublishBtn').textContent = ui.mode === 'pick' ? 'Choisir cette page'
-      : action === 'update' ? 'Mettre à jour la page' : 'Créer la page';
+      : (action === 'update' ? 'Mettre à jour la page' : 'Créer la page') + (ui.after ? ' puis créer l’e-mail' : '');
   }
 
   function seriesOf(rec) {
@@ -460,15 +460,18 @@
    * Ouvre la fenêtre. Mode « publish » : publication du compte rendu ouvert (préremplie
    * depuis sa série). Mode « pick » : choix d'une page (page parente d'une série).
    */
-  async function open({ pick = false, preset = null } = {}) {
+  async function open({ pick = false, preset = null, after = null } = {}) {
     const rec = state.activeRecording;
     if (!pick && !rec) return;
     ui.mode = pick ? 'pick' : 'publish';
+    // « Publier et envoyer » : action lancée une fois la page publiée (e-mail aux participants)
+    ui.after = pick ? null : after;
     ui.cfg = state.config || {};
     const series = pick ? null : seriesOf(rec);
     const parent = pick ? preset : (series && series.confluence_parent);
     await detectProxy();
-    $('cfModalTitle').textContent = pick ? 'Choisir la page Confluence de la série' : 'Publier le compte rendu dans Confluence';
+    $('cfModalTitle').textContent = pick ? 'Choisir la page Confluence de la série'
+      : ui.after ? 'Publier dans Confluence, puis envoyer aux participants' : 'Publier le compte rendu dans Confluence';
     $('cfActionBlock').classList.toggle('hidden', pick);
     $('cfOptionsBlock').classList.toggle('hidden', pick);
     $('cfNotConfigured').classList.toggle('hidden', isConfigured(ui.cfg));
@@ -574,6 +577,23 @@
       setStatus(`✓ Page ${action === 'update' ? 'mise à jour' : 'créée'} : <strong>${escapeHtml(page.title)}</strong>` +
         (url ? ` — <a href="${escapeHtml(url)}" target="_blank" rel="noopener" class="underline text-indigo-300">Ouvrir dans Confluence ↗</a>` : '') + attachNote, 'ok');
       showToast(action === 'update' ? 'Page Confluence mise à jour !' : 'Compte rendu publié dans Confluence !', '📘');
+      if (ui.after) {
+        const after = ui.after;
+        ui.after = null;
+        updateActionUI();
+        // Outlook Web / Gmail s'ouvrent dans un onglet : après l'attente de la publication, le
+        // navigateur peut le bloquer. On propose alors un bouton (nouveau clic de l'utilisateur).
+        const next = after(rec);
+        if (next) {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.id = 'cfAfterBtn';
+          btn.className = 'mt-2 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 transition';
+          btn.textContent = next.label;
+          btn.addEventListener('click', () => { modal(false); next.run(); }, { once: true });
+          $('cfStatus').append(document.createElement('br'), btn);
+        }
+      }
     } catch (err) {
       setStatus(escapeHtml(err.message), 'err');
     } finally {
@@ -586,6 +606,9 @@
     $('confluenceTestBtn').addEventListener('click', testSettings);
 
     $('publishConfluenceBtn').addEventListener('click', () => open());
+    // Le bouton « Publier » ne doit pas hériter d'un « Publier et envoyer » interrompu
+    $('cfCloseBtn').addEventListener('click', () => { ui.after = null; });
+    $('cfCancelBtn').addEventListener('click', () => { ui.after = null; });
     const close = () => {
       if (!$('confluenceModal').classList.contains('hidden') || ui.pickResolve) modal(false);
       if (ui.pickResolve) { const r = ui.pickResolve; ui.pickResolve = null; r(null); }
@@ -613,6 +636,6 @@
     $('cfPublishBtn').addEventListener('click', publish);
   }
 
-  window.VoxConfluence = { readSettings, fillSettings, buildStorage, labelsFor, transcriptText, transcriptFileName, pickLocation, isConfigured: () => isConfigured(state.config || {}), api };
+  window.VoxConfluence = { readSettings, fillSettings, buildStorage, labelsFor, transcriptText, transcriptFileName, pickLocation, open, isConfigured: () => isConfigured(state.config || {}), api };
   document.addEventListener('DOMContentLoaded', setup);
 })();

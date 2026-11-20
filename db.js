@@ -344,7 +344,7 @@
     "key_points": [{ "text": "Point clé 1 abordé avec détails", "refs": [2, 3] }],
     "decisions": [{ "text": "Décision validée pendant l'échange", "refs": [5] }],
     "action_items": [
-      { "task": "Action concrète à réaliser", "assignee": "Personne concernée ou Non assigné", "deadline": "Échéance ou À définir", "status": "todo", "refs": [6] }
+      { "task": "Action concrète à réaliser", "assignee": "Personne concernée ou Non assigné", "deadline": "AAAA-MM-JJ, ou À définir", "status": "todo", "refs": [6] }
     ],
     "tags": ["Tag1", "Tag2", "Tag3"]
   }`;
@@ -368,7 +368,7 @@
    * type de réunion (forme de la synthèse). Chaîne vide hors série.
    */
   function seriesHint(ctx) {
-    if (!ctx) return '';
+    if (!ctx || !ctx.name) return '';
     const lines = [];
     const people = (ctx.participants || []).map(p => p.name).filter(Boolean);
     if (people.length) {
@@ -380,6 +380,17 @@
     }[ctx.type];
     if (style) lines.push(style);
     return lines.length ? `\n\nContexte de la série « ${ctx.name} » :\n- ${lines.join('\n- ')}` : '';
+  }
+
+  /** Échéances en dates absolues, calculées à partir de la date de la réunion. */
+  function dateHint(ctx) {
+    const d = ctx && ctx.meeting_date ? new Date(ctx.meeting_date) : null;
+    if (!d || isNaN(d)) return '';
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const long = d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    return `
+
+La réunion a eu lieu le ${long} (${iso}). Pour chaque action, écris l'échéance ("deadline") sous forme de date absolue au format AAAA-MM-JJ, calculée à partir de cette date : « vendredi » = le prochain vendredi après la réunion, « fin du mois » = le dernier jour du mois, « dans deux semaines » = 14 jours après, etc. Si aucune échéance n'est évoquée, écris « À définir ». N'invente pas d'échéance.`;
   }
 
   /**
@@ -434,7 +445,7 @@ Règles impératives :
 4. ${REFS_RULE}
 5. Réponds UNIQUEMENT avec le JSON pur.`;
 
-    const parts = [{ text: prompt + seriesHint(ctx) + followupHint(ctx) }, ...(await audioParts(audioFiles, 'ENREGISTREMENT'))];
+    const parts = [{ text: prompt + seriesHint(ctx) + followupHint(ctx) + dateHint(ctx) }, ...(await audioParts(audioFiles, 'ENREGISTREMENT'))];
     const { text } = await geminiGenerate(cfg, {
       contents: [{ parts }],
       generationConfig: { temperature: 0.2, response_mime_type: 'application/json' }
@@ -497,7 +508,7 @@ Chaque ligne de la transcription commence par son numéro (#1, #2...). ${REFS_RU
     try {
       const content = await localChat(cfg, [
         { role: 'system', content: 'Tu es un analyste IA de réunions et notes vocales. Tu réponds UNIQUEMENT par un objet JSON pur et valide, sans markdown.' },
-        { role: 'user', content: prompt + seriesHint(ctx) + followupHint(ctx) }
+        { role: 'user', content: prompt + seriesHint(ctx) + followupHint(ctx) + dateHint(ctx) }
       ], 0.2, 300000, { jsonMode: true });
       const parsed = cleanJson(content);
       parsed.transcription = transcription;
@@ -557,7 +568,7 @@ Chaque ligne de la transcription commence par son numéro (#1, #2...). ${REFS_RU
   // Correction de la synthèse : l'IA propose, l'utilisateur valide dans l'interface
   const EDIT_RULE = `Si l'utilisateur te demande de CORRIGER ou de MODIFIER la synthèse d'un enregistrement (résumé, décisions, actions, points clés, tags ou titre), réponds par une courte explication (1 à 3 phrases) des changements, PUIS termine par un bloc de code exactement de cette forme :
 \`\`\`voxai-summary
-{"recording_id": "<identifiant de l'enregistrement>", "title": "<titre corrigé, ou titre actuel>", "summary": {"executive": "…", "executive_refs": [1], "key_points": [{"text": "…", "refs": [2]}], "decisions": [{"text": "…", "refs": [3]}], "action_items": [{"task": "…", "assignee": "…", "deadline": "…", "status": "todo", "refs": [4]}], "tags": ["…"]}}
+{"recording_id": "<identifiant de l'enregistrement>", "title": "<titre corrigé, ou titre actuel>", "summary": {"executive": "…", "executive_refs": [1], "key_points": [{"text": "…", "refs": [2]}], "decisions": [{"text": "…", "refs": [3]}], "action_items": [{"task": "…", "assignee": "…", "deadline": "AAAA-MM-JJ ou À définir", "status": "todo", "refs": [4]}], "tags": ["…"]}}
 \`\`\`
 Le bloc contient la synthèse COMPLÈTE corrigée : reprends à l'identique tout ce qui n'est pas concerné (textes, refs, status). N'ajoute ce bloc QUE pour une demande de modification, jamais pour une simple question. La modification ne sera appliquée qu'après validation par l'utilisateur.`;
 
@@ -767,7 +778,7 @@ ${EDIT_RULE}`;
       action_items: list(p.action_items).map(a => ({
         task: String((a && a.task) || ''),
         assignee: String((a && a.assignee) || ''),
-        deadline: String((a && a.deadline) || ''),
+        deadline: normalizeDeadline(a && a.deadline),
         status: (a && (a.status === 'done' || a.status === 'todo')) ? a.status
           : (prevStatus.get(String((a && a.task) || '').trim().toLowerCase()) === 'done' ? 'done' : 'todo'),
         refs: refs(a && a.refs)
@@ -776,6 +787,17 @@ ${EDIT_RULE}`;
       // Suivi des actions précédentes : conservé tel quel si la proposition ne le contient pas
       action_followup: sanitizeFollowup(Array.isArray(p.action_followup) ? p.action_followup : prev.action_followup, refs)
     };
+  }
+
+  /** Échéance : date AAAA-MM-JJ valide gardée seule (« 2026-11-27 (vendredi) » → « 2026-11-27 »), sinon texte. */
+  function normalizeDeadline(v) {
+    const d = str(v, 200).trim();
+    const m = d.match(/^(\d{4})-(\d{2})-(\d{2})(?![\d:T])/);
+    if (m) {
+      const date = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+      if (date.getMonth() === Number(m[2]) - 1 && date.getDate() === Number(m[3])) return m[0];
+    }
+    return d;
   }
 
   /** Suivi d'actions précédentes : { rec_id, index, task, assignee, status, note, refs }. */
@@ -1130,7 +1152,8 @@ ${EDIT_RULE}`;
         const openActions = series ? await openActionsBefore(rec) : [];
         await store.put('recordings', { ...rec, status: 'processing', error_message: null });
         try {
-          const result = await processRecording(audioFiles, cfg, series ? { ...series, open_actions: openActions } : null);
+          // Contexte : série (participants, type, actions ouvertes) et date de la réunion (échéances)
+          const result = await processRecording(audioFiles, cfg, { ...(series || {}), open_actions: openActions, meeting_date: rec.created_at });
           const fresh = await store.get('recordings', recId);
           if (fresh) {
             const transcription = applySeriesAliases(sanitizeTranscription(result.transcription), series);

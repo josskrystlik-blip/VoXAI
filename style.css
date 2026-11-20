@@ -681,3 +681,7 @@ mark.search-hit { background: rgba(250, 204, 21, 0.35); color: inherit; border-r
 :root[data-theme="light"] .follow-badge-done { color: #047857; }
 :root[data-theme="light"] .follow-badge-progress { color: #b45309; }
 :root[data-theme="light"] .follow-badge-closed { color: #475569; }
+
+/* Échéance dépassée */
+.deadline-overdue { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; background: rgba(244, 63, 94, 0.15); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.3); }
+:root[data-theme="light"] .deadline-overdue { color: #be123c; }

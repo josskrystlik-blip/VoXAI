@@ -117,9 +117,19 @@
         <!-- Rempli dynamiquement en JS -->
       </div>
 
+      <!-- Rappel de sauvegarde : les données ne vivent que dans ce navigateur -->
+      <div id="backupReminder" class="hidden mx-3 mb-2 p-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-[11px] leading-snug" role="status">
+        <p class="font-semibold text-amber-300">💾 Pensez à sauvegarder</p>
+        <p id="backupReminderText" class="text-slate-300 mt-1"></p>
+        <div class="flex gap-2 mt-2">
+          <button type="button" id="backupReminderSave" class="px-2.5 py-1 rounded-lg font-semibold bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/30 transition">Sauvegarder maintenant</button>
+          <button type="button" id="backupReminderLater" class="px-2.5 py-1 rounded-lg text-slate-400 hover:text-slate-200 transition">Plus tard</button>
+        </div>
+      </div>
+
       <!-- Version (à mettre à jour à chaque release : la release vérifie qu'elle correspond au tag) -->
       <div class="px-4 py-2.5 border-t border-white/[0.06] flex items-center justify-between text-[11px] text-slate-500">
-        <span>VoxAI <span id="appVersion" class="font-mono">v1.10.0</span></span>
+        <span>VoxAI <span id="appVersion" class="font-mono">v1.11.0</span></span>
         <button type="button" id="versionsBtn" class="font-semibold text-indigo-400 hover:text-indigo-300 hover:underline transition" title="Historique des versions">Nouveautés</button>
       </div>
     </aside>
@@ -232,6 +242,10 @@
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/>
                 </svg>
                 Copier
+              </button>
+              <button id="publishSendBtn" type="button" class="hidden flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 transition shadow-sm" title="Publier sous la page Confluence de la série, puis créer l'e-mail aux participants avec le lien">
+                <span class="text-sm leading-none" aria-hidden="true">🚀</span>
+                Publier et envoyer
               </button>
               <button id="sendParticipantsBtn" type="button" class="hidden flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-200 border border-white/10 hover:border-emerald-500/40 transition shadow-sm">
                 <span class="text-sm leading-none" aria-hidden="true">✉️</span>
@@ -773,7 +787,16 @@
       </div>
       <div id="versionsList" class="overflow-y-auto p-6 space-y-5">
         <section class="version-entry">
-          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.10.0</span> — Suivi des actions et brief avant réunion <span class="ml-1.5 px-1.5 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 text-[10px] font-semibold align-middle">Version actuelle</span></h4>
+          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.11.0</span> — Échéances datées, publier et envoyer, rappel de sauvegarde <span class="ml-1.5 px-1.5 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 text-[10px] font-semibold align-middle">Version actuelle</span></h4>
+          <p class="text-[11px] text-slate-500 mb-1.5">20 novembre 2026</p>
+          <ul class="list-disc pl-5 space-y-1 text-xs text-slate-300">
+            <li>Échéances en vraies dates (« vendredi » devient « ven. 27 nov. ») et badge « ⏰ En retard » dans la synthèse, la fenêtre de suivi et le brief.</li>
+            <li>Bouton « 🚀 Publier et envoyer » : publication sous la page Confluence de la série puis e-mail aux participants avec le lien, en une fois.</li>
+            <li>Rappel de sauvegarde après 7 jours : vos réunions et séries ne vivent que dans ce navigateur.</li>
+          </ul>
+        </section>
+        <section class="version-entry">
+          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.10.0</span> — Suivi des actions et brief avant réunion</h4>
           <p class="text-[11px] text-slate-500 mb-1.5">20 novembre 2026</p>
           <ul class="list-disc pl-5 space-y-1 text-xs text-slate-300">
             <li>À l’analyse d’une réunion d’une série, l’IA indique où en sont les actions des réunions précédentes (terminée, en cours) ; vous confirmez avant toute clôture.</li>
