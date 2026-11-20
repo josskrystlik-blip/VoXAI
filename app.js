@@ -1170,9 +1170,10 @@ function renderTranscriptTab(transcription) {
     item.className = 'transcript-seg flex items-start gap-4 p-3 rounded-xl bg-slate-900/40 border border-slate-800/60 hover:border-slate-700/80 transition';
     
     const speakerName = escapeHtml(seg.speaker || `Orateur ${idx + 1}`);
-    const timestamp = seg.timestamp || '00:00';
+    // Défense en profondeur : valeurs normalisées et échappées même si la base a été validée
+    const timestamp = escapeHtml(/^[\d:.]{1,12}$/.test(String(seg.timestamp || '')) ? seg.timestamp : '00:00');
     const text = escapeHtml(seg.text || '');
-    const fileIdx = seg.file_index || 1;
+    const fileIdx = Math.max(1, parseInt(seg.file_index, 10) || 1);
     const fileName = seg.file_name ? escapeHtml(seg.file_name) : `Piste ${fileIdx}`;
 
     item.innerHTML = `
@@ -2409,8 +2410,9 @@ function formatBytes(bytes) {
 }
 
 function escapeHtml(str) {
-  if (!str) return '';
-  return str.replace(/[&<>'"]/g, tag => ({
+  if (str == null || str === '') return '';
+  if (typeof str === 'object') str = ''; // jamais d'objet inattendu dans le HTML
+  return String(str).replace(/[&<>'"]/g, tag => ({
     '&': '&amp;',
     '<': '&lt;',
     '>': '&gt;',

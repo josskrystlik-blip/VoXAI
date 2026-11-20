@@ -1,0 +1,75 @@
+name: Sécurité
+
+# Couverture de tests de sécurité de VoxAI (voir tests/security/) :
+#  - statique : fonctions dangereuses, CSP, scripts en ligne, ressources externes, secrets, npm audit
+#  - navigateur : XSS (sauvegarde, réponses IA, Confluence, orateurs), injection XML / en-têtes,
+#                 application de la CSP, politique « sans cloud », clé d'API hors des URL
+#  - docker : en-têtes HTTP, fichiers non exposés, configurations injectées refusées, proxy Confluence
+#  - image : vulnérabilités connues des paquets de l'image (Trivy), aussi chaque semaine
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * 1" # chaque lundi : nouvelles vulnérabilités publiées entre-temps
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  statique:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: bash tests/security/static.sh
+
+  navigateur:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Installer Playwright (Chromium)
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.63.0
+          npx playwright install --with-deps chromium
+      - run: node tests/security/browser.test.js
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: bash tests/security/docker.sh
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build -t voxai:scan .
+      - name: Vulnérabilités hautes et critiques (rapport)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: voxai:scan
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: "0"
+      - name: Vulnérabilités critiques corrigeables (bloquant)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: voxai:scan
+          scanners: vuln
+          severity: CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: "1"

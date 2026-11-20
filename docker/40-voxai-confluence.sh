@@ -8,10 +8,12 @@ OUT=/etc/nginx/voxai/confluence.locations
 
 if [ -n "${CONFLUENCE_URL:-}" ]; then
   TARGET="${CONFLUENCE_URL%/}"
-  case "$TARGET" in
-    http://*|https://*) ;;
-    *) echo "VoxAI : CONFLUENCE_URL doit commencer par http:// ou https://" >&2; exit 1 ;;
-  esac
+  # URL stricte : schéma, hôte, port et chemin simples uniquement (aucun caractère
+  # qui permettrait d'injecter des directives dans la configuration nginx)
+  if ! printf '%s' "$TARGET" | grep -Eq '^https?://[A-Za-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~%/-]*)?$'; then
+    echo "VoxAI : CONFLUENCE_URL invalide (attendu : https://hote[:port][/chemin])" >&2
+    exit 1
+  fi
   UPSTREAM_HOST=$(echo "$TARGET" | sed -E 's#^https?://([^/:]+).*#\1#')
   cat > "$OUT" <<CONF
 location = /confluence-proxy.json {

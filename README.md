@@ -203,6 +203,10 @@ Sans proxy (GitHub Pages), l'administrateur Confluence doit autoriser l'origine 
 - **Transcription en direct** (interrupteur sous le bouton d'enregistrement) : le texte s'affiche pendant que vous parlez, via la reconnaissance vocale du navigateur (Chrome / Edge). ⚠️ L'audio est alors aussi envoyé à Google ou Microsoft ; la fonction est désactivée par défaut. Ce brouillon est conservé avec l'enregistrement ; l'analyse IA reste la transcription de référence.
 - **Assistant IA** : boutons de copie sous chaque réponse ; pour un e-mail, **Créer le mail** dans Outlook (brouillon `.eml` prêt à envoyer), Outlook Web, Gmail ou la messagerie par défaut.
 
+## 🔒 Sécurité
+
+Mesures en place, tests de sécurité automatisés (`npm run test:security`, `bash tests/security/docker.sh`) et risques résiduels : voir [SECURITE.md](SECURITE.md).
+
 ## 📁 Structure du Projet
 
 ```text

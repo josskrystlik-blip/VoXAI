@@ -581,6 +581,56 @@ ${EDIT_RULE}`;
     return chatLLM(cfg, system, history, userMsg, "Compris, je réponds à vos questions sur l'ensemble de vos enregistrements.");
   }
 
+  // ============================================================================
+  // Validation des données venant de l'extérieur (IA, fichiers de sauvegarde)
+  // Les champs sont ramenés à des types et formats attendus : aucune valeur
+  // inattendue n'atteint l'affichage (défense en profondeur contre le XSS).
+  // ============================================================================
+
+  const str = (v, max = 100000) => (v == null ? '' : String(typeof v === 'object' ? '' : v)).slice(0, max);
+  const TIMESTAMP_RE = /^\d{1,2}(:\d{1,2}){1,2}(\.\d+)?$/;
+
+  /** Transcription : tableau de segments { file_index, file_name, speaker, timestamp, text }. */
+  function sanitizeTranscription(list) {
+    return (Array.isArray(list) ? list : []).slice(0, 20000)
+      .filter(seg => seg && typeof seg === 'object')
+      .map(seg => {
+        const ts = str(seg.timestamp, 12).trim();
+        const fileIndex = parseInt(seg.file_index, 10);
+        const out = {
+          file_index: Number.isInteger(fileIndex) && fileIndex >= 1 && fileIndex <= 1000 ? fileIndex : 1,
+          speaker: str(seg.speaker, 200),
+          timestamp: TIMESTAMP_RE.test(ts) ? ts : '00:00',
+          text: str(seg.text)
+        };
+        if (seg.file_name != null) out.file_name = str(seg.file_name, 300);
+        return out;
+      });
+  }
+
+  const ID_RE = /^[\w-]{1,100}$/;
+
+  /** Enregistrement importé depuis une sauvegarde : champs connus et typés uniquement. */
+  function sanitizeImportedRecording(r) {
+    if (!r || typeof r !== 'object' || !ID_RE.test(str(r.id, 101))) return null;
+    const transcription = sanitizeTranscription(r.transcription);
+    const date = new Date(str(r.created_at, 40));
+    return {
+      id: r.id,
+      title: str(r.title, 300) || 'Enregistrement importé',
+      created_at: isNaN(date) ? new Date().toISOString() : date.toISOString(),
+      duration: Math.max(0, Number(r.duration) || 0),
+      filename: str(r.filename, 300),
+      mime_type: str(r.mime_type, 100) || 'audio/webm',
+      file_size: Math.max(0, Number(r.file_size) || 0),
+      status: ['recorded', 'completed', 'error'].includes(r.status) ? r.status : 'recorded',
+      transcription,
+      summary: r.summary && typeof r.summary === 'object' ? sanitizeSummary(r.summary, null, transcription.length) : null,
+      error_message: r.error_message ? str(r.error_message, 2000) : null,
+      ...(r.live_transcript ? { live_transcript: str(r.live_transcript, 500000) } : {})
+    };
+  }
+
   /** Nettoie une synthèse proposée par l'IA (structure, refs valides, statut des actions conservé). */
   function sanitizeSummary(proposed, previous, segmentCount) {
     const p = (proposed && typeof proposed === 'object') ? proposed : {};
@@ -854,15 +904,17 @@ ${EDIT_RULE}`;
           const result = await processRecording(audioFiles, cfg);
           const fresh = await store.get('recordings', recId);
           if (fresh) {
+            const transcription = sanitizeTranscription(result.transcription);
             await store.put('recordings', {
               ...fresh,
-              title: result.title || fresh.title,
-              transcription: result.transcription || [],
-              summary: result.summary || {},
+              title: str(result.title, 300).trim() || fresh.title,
+              transcription,
+              summary: sanitizeSummary(result.summary, null, transcription.length),
               status: 'completed'
             });
           }
-          return json(200, { success: true, title: result.title, transcription: result.transcription, summary: result.summary });
+          const saved = await store.get('recordings', recId);
+          return json(200, { success: true, title: saved && saved.title, transcription: saved && saved.transcription, summary: saved && saved.summary });
         } catch (err) {
           const fresh = await store.get('recordings', recId);
           if (fresh) await store.put('recordings', { ...fresh, status: 'error', error_message: err.message });
@@ -1044,24 +1096,34 @@ ${EDIT_RULE}`;
 
     const existing = new Set((await store.all('recordings')).map(r => r.id));
     const existingFiles = new Set((await store.all('files')).map(f => f.filename));
-    const toImport = (manifest.recordings || []).filter(r => r && r.id && !existing.has(r.id));
+    const toImport = (Array.isArray(manifest.recordings) ? manifest.recordings : [])
+      .map(sanitizeImportedRecording)
+      .filter(r => r && !existing.has(r.id));
     const ids = new Set(toImport.map(r => r.id));
 
     await tx(['recordings', 'files', 'chat'], 'readwrite', async t => {
-      for (const rec of toImport) {
-        t.objectStore('recordings').put(rec.status === 'processing' ? { ...rec, status: 'recorded' } : rec);
+      for (const rec of toImport) t.objectStore('recordings').put(rec);
+      for (const f of Array.isArray(manifest.files) ? manifest.files : []) {
+        if (!f || !ids.has(f.recording_id)) continue;
+        const filename = str(f.filename, 300);
+        const offset = Number(f.offset), size = Number(f.size);
+        if (!/^[\w.-]{1,300}$/.test(filename) || existingFiles.has(filename)) continue;
+        if (!Number.isSafeInteger(offset) || !Number.isSafeInteger(size) || offset < 0 || size < 0) continue;
+        const mime = /^audio\/[\w.+-]+(;.*)?$/.test(str(f.type || f.mime_type, 100)) ? str(f.type || f.mime_type, 100) : 'audio/webm';
+        t.objectStore('files').add({
+          recording_id: f.recording_id, filename, original_name: str(f.original_name, 300), mime_type: mime,
+          file_size: size, duration: Math.max(0, Number(f.duration) || 0), sort_order: Math.max(0, parseInt(f.sort_order, 10) || 0),
+          created_at: str(f.created_at, 40),
+          blob: new Blob([file.slice(dataStart + offset, dataStart + offset + size)], { type: mime })
+        });
       }
-      for (const f of manifest.files || []) {
-        if (!ids.has(f.recording_id) || existingFiles.has(f.filename)) continue;
-        const { offset, size, type, ...meta } = f;
-        const blob = new Blob([file.slice(dataStart + offset, dataStart + offset + size)], { type: type || meta.mime_type });
-        t.objectStore('files').add({ ...meta, blob });
-      }
-      for (const m of manifest.chat || []) {
-        if (ids.has(m.recording_id)) t.objectStore('chat').add(m);
+      for (const m of Array.isArray(manifest.chat) ? manifest.chat : []) {
+        if (!m || !ids.has(m.recording_id) || !['user', 'assistant'].includes(m.role)) continue;
+        t.objectStore('chat').add({ recording_id: m.recording_id, role: m.role, content: str(m.content), created_at: str(m.created_at, 40) });
       }
     });
-    return { imported: toImport.length, skipped: (manifest.recordings || []).length - toImport.length };
+    const total = Array.isArray(manifest.recordings) ? manifest.recordings.length : 0;
+    return { imported: toImport.length, skipped: total - toImport.length };
   }
 
   const blobUrls = new Map();
