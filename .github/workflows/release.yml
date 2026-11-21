@@ -75,13 +75,14 @@ jobs:
           mkdir -p dist "voxai-web-$V" "voxai-docker-$V"
 
           # 1. Site statique, à déposer sur n'importe quel hébergement web
-          cp -r index.html theme-init.js app.js series.js db.js confluence.js live.js style.css vendor LICENSE README.md "voxai-web-$V/"
+          cp -r index.html theme-init.js app.js series.js onboarding.js db.js confluence.js live.js style.css vendor LICENSE README.md "voxai-web-$V/"
           zip -qr "dist/voxai-web-$V.zip" "voxai-web-$V"
 
           # 2. Image Docker hors-ligne (amd64) + compose prêt à l'emploi
           docker buildx build --platform linux/amd64 -t "voxai:$V" --load .
           docker save "voxai:$V" | gzip > "voxai-docker-$V/voxai-image-$V-amd64.tar.gz"
           sed "s#image: .*#image: voxai:$V#; /build: ./d" docker-compose.yml > "voxai-docker-$V/docker-compose.yml"
+          cp docs/DEPLOIEMENT-DOCKER.md "voxai-docker-$V/"
           cat > "voxai-docker-$V/INSTALL.txt" <<EOF
           VoxAI $V - installation hors-ligne
 
@@ -89,6 +90,7 @@ jobs:
             docker compose up -d
 
           Puis ouvrir http://localhost:8080
+          Guide complet (100 % sur site, HTTPS, CORS, dépannage) : DEPLOIEMENT-DOCKER.md
           EOF
           zip -qr "dist/voxai-docker-$V.zip" "voxai-docker-$V"
 

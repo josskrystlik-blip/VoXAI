@@ -92,6 +92,17 @@ check "Réglages par défaut : JSON valide malgré des guillemets / sauts de lig
 check "Réglages par défaut : impossible de désactiver la politique par injection" \
   'python3 -c "import json,sys; d=json.loads(sys.argv[1]); sys.exit(0 if d[\"policy\"][\"disable_cloud\"] is True else 1)" "$DEF" 2>/dev/null'
 
+# --- Mode 100 % interne : connexions du navigateur limitées aux serveurs déclarés ---
+if run vx-sec-onprem 18083 -e VOXAI_DISABLE_CLOUD=true -e VOXAI_LLM_URL=https://llm.corp.test:8443/v1 \
+     -e VOXAI_STT_URL=http://whisper.corp.test:8000/v1 -e VOXAI_CONFLUENCE_URL=https://wiki.corp.test; then
+  CSP3="$(curl -sI "http://127.0.0.1:18083/" | grep -i '^content-security-policy:')"
+  check "100 % interne : connect-src limité à l'application et aux serveurs déclarés" \
+    'grep -q "connect-src '"'"'self'"'"' https://llm.corp.test:8443 http://whisper.corp.test:8000 https://wiki.corp.test;" <<<"$CSP3"'
+  check "100 % interne : Google (Gemini) injoignable depuis le navigateur" '! grep -qE "connect-src[^;]*(https:|http:)( |;)" <<<"$CSP3"'
+else
+  ko "100 % interne : le conteneur ne démarre pas"
+fi
+
 # --- Proxy Confluence -------------------------------------------------------
 cat > /tmp/voxai-upstream.py <<'PY'
 import json, sys

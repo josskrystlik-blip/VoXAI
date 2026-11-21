@@ -43,7 +43,7 @@ for (const name of [...NEUTRALS, ...ACCENTS]) {
 }
 
 module.exports = {
-  content: ['./index.html', './app.js', './confluence.js', './live.js', './db.js', './series.js'],
+  content: ['./index.html', './app.js', './confluence.js', './live.js', './db.js', './series.js', './onboarding.js'],
   theme: {
     extend: {
       colors,
