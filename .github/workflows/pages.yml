@@ -31,7 +31,7 @@ jobs:
       - name: Préparer le site
         run: |
           mkdir -p _site
-          cp -r index.html theme-init.js app.js series.js onboarding.js db.js confluence.js live.js style.css vendor LICENSE .nojekyll _site/
+          cp -r index.html theme-init.js app.js series.js onboarding.js db.js confluence.js live.js style.css sw.js manifest.webmanifest icons vendor LICENSE .nojekyll _site/
           ls -la _site
 
       - uses: actions/configure-pages@v6

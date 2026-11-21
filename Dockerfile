@@ -15,8 +15,9 @@ COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 COPY docker/20-voxai-security.sh /docker-entrypoint.d/20-voxai-security.sh
 COPY docker/30-voxai-defaults.sh /docker-entrypoint.d/30-voxai-defaults.sh
 COPY docker/40-voxai-confluence.sh /docker-entrypoint.d/40-voxai-confluence.sh
-COPY index.html theme-init.js app.js series.js onboarding.js db.js confluence.js live.js style.css /usr/share/nginx/html/
+COPY index.html theme-init.js app.js series.js onboarding.js db.js confluence.js live.js style.css sw.js manifest.webmanifest /usr/share/nginx/html/
 COPY vendor /usr/share/nginx/html/vendor
+COPY icons /usr/share/nginx/html/icons
 
 # Facultatif : URL de Confluence à relayer sur /confluence/ (évite les blocages CORS)
 ENV CONFLUENCE_URL=""

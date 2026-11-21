@@ -48,3 +48,12 @@ jobs:
             echo "::error::La version affichée ($shown) doit être la première entrée de la fenêtre « Nouveautés » ($latest)."
             exit 1
           fi
+      - name: Version du service worker = version affichée (cache hors ligne renouvelé à chaque version)
+        run: |
+          shown="$(grep -oE 'id="appVersion" class="font-mono">v[0-9.]+' index.html | grep -oE 'v[0-9.]+$')"
+          sw="$(grep -oE "^const VERSION = 'v[0-9.]+'" sw.js | grep -oE 'v[0-9.]+')"
+          echo "affichée : $shown — service worker : $sw"
+          if [ -z "$sw" ] || [ "$sw" != "$shown" ]; then
+            echo "::error::sw.js (VERSION = $sw) doit porter la version affichée ($shown) : sinon les utilisateurs gardent l'ancienne version en cache."
+            exit 1
+          fi

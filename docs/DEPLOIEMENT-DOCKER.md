@@ -23,6 +23,7 @@ Ce guide s'adresse à l'équipe qui installe VoxAI pour son entreprise. Il couvr
 
 - **Le conteneur ne fait que servir l'application.** Il ne voit passer ni l'audio, ni les transcriptions, ni les comptes rendus (sauf si vous activez le relais Confluence, voir §6.3, qui transmet les requêtes sans les conserver).
 - **Le navigateur appelle directement** le serveur Whisper, le LLM et Confluence. Ces serveurs doivent donc être joignables **depuis les postes des utilisateurs**, pas seulement depuis le conteneur.
+- **Application installable et utilisable hors ligne (PWA)** : après une première visite, le navigateur garde l'application en cache. Le dictaphone enregistre sans réseau ; les analyses se lancent au retour du réseau (bandeau « Analyser maintenant »). À chaque nouvelle version de l'image, le cache est renouvelé automatiquement.
 - **Les données restent dans le navigateur** de chaque utilisateur. Il n'y a rien à sauvegarder côté serveur ; chaque utilisateur exporte ses données en `.voxai` (un rappel s'affiche après 7 jours).
 
 ## 2. Prérequis
@@ -30,7 +31,7 @@ Ce guide s'adresse à l'équipe qui installe VoxAI pour son entreprise. Il couvr
 | Élément | Exigence |
 | :--- | :--- |
 | Hôte | Docker 24+ et Docker Compose v2. Le conteneur est léger (nginx statique, quelques dizaines de Mo de mémoire). |
-| Nom et certificat | Un nom DNS (ex. `voxai.entreprise.fr`) et un certificat TLS. **Le HTTPS est obligatoire** : sans lui, les navigateurs refusent l'accès au micro (sauf sur `localhost`). |
+| Nom et certificat | Un nom DNS (ex. `voxai.entreprise.fr`) et un certificat TLS. **Le HTTPS est obligatoire** : sans lui, les navigateurs refusent l'accès au micro et l'installation de l'application hors ligne (sauf sur `localhost`). |
 | LLM | Serveur **compatible OpenAI** (`POST /v1/chat/completions`) : vLLM, LiteLLM, Ollama, LM Studio… Modèle recommandé : `gpt-oss-120b`. |
 | Transcription | Serveur **Whisper compatible OpenAI** (`POST /v1/audio/transcriptions`) : speaches / faster-whisper-server, vLLM avec un modèle Whisper, LiteLLM devant un Whisper… |
 | Confluence | Facultatif : Server / Data Center (jeton personnel PAT) ou Cloud (e-mail + jeton d'API). |
@@ -250,4 +251,5 @@ docker compose pull && docker compose up -d
 | L'analyse échoue au bout de quelques minutes | Délai du reverse proxy trop court | `proxy_read_timeout 600s` (§6.2). |
 | Confluence : 403 / erreur XSRF | Appels directs refusés par Confluence | Utiliser le relais `CONFLUENCE_URL` (§6.3). |
 | Le conteneur s'arrête au démarrage | Variable refusée (`CONFLUENCE_URL`, `VOXAI_CSP_CONNECT_SRC`) | Lire `docker compose logs voxai` et corriger la valeur. |
+| L'ancienne version reste affichée après une mise à jour | Application en cache (PWA) | Elle se met à jour en arrière-plan : un message invite à recharger la page. Sinon, fermer puis rouvrir l'onglet. |
 | Un utilisateur ne retrouve plus ses réunions | Adresse de VoxAI changée, ou données du navigateur effacées | Restaurer sa dernière sauvegarde `.voxai` (⚙️ Paramètres). |

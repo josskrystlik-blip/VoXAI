@@ -153,6 +153,8 @@ async function init() {
   document.dispatchEvent(new CustomEvent('voxai:config-loaded'));
   await loadRecordings();
   setupEventListeners();
+  setupOffline();
+  setupPwa();
   initCanvas();
 
   // Premier lancement : assistant de démarrage (IA, Confluence, première série)
@@ -780,6 +782,7 @@ async function loadRecordings() {
     state.recordings = await res.json();
     renderRecordingsList();
     checkBackupReminder();
+    refreshPendingBanner();
     updateAssistantContext();
   } catch (err) {
     console.error('Erreur chargement recordings:', err);
@@ -815,6 +818,8 @@ function renderRecordingsList() {
       statusBadge = '<span class="text-[10px] text-amber-400 animate-pulse">⏳ Analyse...</span>';
     } else if (rec.status === 'error') {
       statusBadge = '<span class="text-[10px] text-red-400">✗ Erreur</span>';
+    } else if (rec.status === 'pending') {
+      statusBadge = '<span class="text-[10px] text-sky-400" title="Enregistré hors ligne : analyse à lancer">⏳ En attente</span>';
     }
 
     const formattedDate = formatSimpleDate(rec.created_at);
@@ -937,6 +942,9 @@ function renderRecordingDetails() {
   } else if (rec.status === 'error') {
     elements.detailStatusBadge.textContent = 'Erreur d’analyse';
     elements.detailStatusBadge.className = 'text-xs px-2.5 py-0.5 rounded-full font-medium bg-red-500/10 text-red-400 border border-red-500/20';
+  } else if (rec.status === 'pending') {
+    elements.detailStatusBadge.textContent = 'En attente d’analyse (hors ligne)';
+    elements.detailStatusBadge.className = 'text-xs px-2.5 py-0.5 rounded-full font-medium bg-sky-500/10 text-sky-400 border border-sky-500/20';
   } else {
     elements.detailStatusBadge.textContent = 'Non analysé';
     elements.detailStatusBadge.className = 'text-xs px-2.5 py-0.5 rounded-full font-medium bg-slate-700 text-slate-300';
@@ -967,7 +975,10 @@ function renderSummaryTab(summary) {
   if (!summary || typeof summary !== 'object') {
     const card = document.getElementById('followupCard');
     if (card) card.classList.add('hidden');
-    elements.summaryExecutive.textContent = "Cet enregistrement n'a pas encore été analysé par l'IA. Cliquez sur 'Relancer IA' ci-dessus.";
+    const pending = state.activeRecording && state.activeRecording.status === 'pending';
+    elements.summaryExecutive.textContent = pending
+      ? "📴 Enregistré hors ligne : l'audio est conservé sur cet appareil. Lancez l'analyse (« Relancer IA » ou « Analyser maintenant ») dès que le réseau est revenu."
+      : "Cet enregistrement n'a pas encore été analysé par l'IA. Cliquez sur 'Relancer IA' ci-dessus.";
     elements.summaryDecisions.innerHTML = '<li class="text-slate-500 italic">Aucune décision recensée.</li>';
     elements.summaryActions.innerHTML = '<p class="text-slate-500 italic">Aucune action requise.</p>';
     elements.summaryKeyPoints.innerHTML = '';
@@ -1869,6 +1880,10 @@ async function triggerAIProcessing(recId) {
       showToast('Analyse IA terminée avec succès !', '🎉');
       await selectRecording(recId);
       await loadRecordings();
+    } else if (data.offline) {
+      showToast('Hors ligne : enregistrement conservé, l’analyse se lancera quand vous le déciderez au retour du réseau.', '📴');
+      await selectRecording(recId);
+      await loadRecordings();
     } else {
       showToast('Erreur IA: ' + data.error, '⚠️');
       await selectRecording(recId);
@@ -2123,6 +2138,113 @@ async function refreshBackupInfo() {
     if (est && est.usage != null) usage = ` · ${formatBytes(est.usage)} utilisés dans ce navigateur`;
   } catch { /* indisponible */ }
   el.textContent = `${count} enregistrement${count > 1 ? 's' : ''}${usage}`;
+}
+
+// ----------------------------------------------------------------------------
+// Hors ligne : le dictaphone fonctionne toujours ; les enregistrements dont l'analyse
+// n'a pas pu partir sont « en attente », et l'utilisateur lance l'analyse au retour du réseau.
+// ----------------------------------------------------------------------------
+function pendingRecordings() {
+  return (state.recordings || []).filter(r => r.status === 'pending');
+}
+
+function refreshPendingBanner() {
+  const box = document.getElementById('pendingBanner');
+  if (!box) return;
+  const list = pendingRecordings();
+  box.classList.toggle('hidden', list.length === 0);
+  if (!list.length) return;
+  const online = navigator.onLine !== false;
+  const n = list.length;
+  document.getElementById('pendingTitle').textContent = `${online ? '📶' : '📴'} ${n} enregistrement${n > 1 ? 's' : ''} en attente d'analyse`;
+  document.getElementById('pendingText').textContent = online
+    ? 'Enregistrés hors ligne. Lancez l’analyse maintenant que le réseau est disponible.'
+    : 'Ils sont conservés sur cet appareil et seront analysés au retour du réseau.';
+  const btn = document.getElementById('pendingRunBtn');
+  btn.disabled = !online || state.pendingRunning;
+  btn.textContent = state.pendingRunning ? '⏳ Analyse en cours…' : `🧠 Analyser ${n > 1 ? `les ${n}` : ''} maintenant`.replace('  ', ' ');
+}
+
+/** Analyse les enregistrements en attente, un par un ; s'arrête si le réseau retombe. */
+async function runPendingAnalyses() {
+  const list = pendingRecordings();
+  if (!list.length || state.pendingRunning) return;
+  state.pendingRunning = true;
+  refreshPendingBanner();
+  let done = 0;
+  try {
+    for (const rec of list) {
+      showToast(`Analyse ${done + 1}/${list.length} : « ${rec.title} »…`, '🧠');
+      const res = await fetch(`/api/recordings/${rec.id}/process`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (data.offline) { showToast('Réseau de nouveau indisponible : analyses restantes en attente.', '📴'); break; }
+      if (data.success) done++;
+      else showToast(`« ${rec.title} » : ${data.error || 'erreur'}`, '⚠️');
+    }
+    if (done) showToast(`${done} enregistrement${done > 1 ? 's' : ''} analysé${done > 1 ? 's' : ''} !`, '🎉');
+  } finally {
+    state.pendingRunning = false;
+    await loadRecordings();
+    if (state.activeRecording && list.some(r => r.id === state.activeRecording.id)) await selectRecording(state.activeRecording.id);
+  }
+}
+
+function updateConnectivity() {
+  const offline = navigator.onLine === false;
+  const badge = document.getElementById('offlineBadge');
+  if (badge) { badge.classList.toggle('hidden', !offline); badge.classList.toggle('flex', offline); }
+  refreshPendingBanner();
+}
+
+function setupOffline() {
+  window.addEventListener('offline', () => {
+    updateConnectivity();
+    showToast('Hors ligne : le dictaphone fonctionne, l’analyse IA attendra le retour du réseau.', '📴');
+  });
+  window.addEventListener('online', () => {
+    updateConnectivity();
+    const n = pendingRecordings().length;
+    showToast(n ? `Réseau rétabli : ${n} enregistrement${n > 1 ? 's' : ''} à analyser.` : 'Réseau rétabli.', '📶');
+  });
+  document.getElementById('pendingRunBtn').addEventListener('click', runPendingAnalyses);
+  updateConnectivity();
+}
+
+/** Application installable et disponible hors ligne (service worker sw.js). */
+function setupPwa() {
+  if (!('serviceWorker' in navigator) || location.protocol === 'file:') return;
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    reg.addEventListener('updatefound', () => {
+      const sw = reg.installing;
+      if (!sw) return;
+      sw.addEventListener('statechange', () => {
+        // Nouvelle version installée alors qu'une autre était active : jamais de rechargement
+        // automatique (un enregistrement peut être en cours)
+        if (sw.state === 'activated' && state.swWasControlled) {
+          showToast('VoxAI a été mis à jour : rechargez la page quand vous le souhaitez.', '✨');
+        }
+      });
+    });
+  }).catch(err => console.warn('[PWA] service worker non enregistré :', err));
+  state.swWasControlled = !!navigator.serviceWorker.controller;
+
+  const installBtn = document.getElementById('installAppBtn');
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    state.installPrompt = e;
+    installBtn.classList.remove('hidden');
+  });
+  installBtn.addEventListener('click', async () => {
+    if (!state.installPrompt) return;
+    state.installPrompt.prompt();
+    await state.installPrompt.userChoice.catch(() => null);
+    state.installPrompt = null;
+    installBtn.classList.add('hidden');
+  });
+  window.addEventListener('appinstalled', () => {
+    installBtn.classList.add('hidden');
+    showToast('VoxAI est installé : il s’ouvre aussi sans réseau.', '📲');
+  });
 }
 
 // ----------------------------------------------------------------------------
