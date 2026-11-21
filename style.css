@@ -685,3 +685,27 @@ mark.search-hit { background: rgba(250, 204, 21, 0.35); color: inherit; border-r
 /* Échéance dépassée */
 .deadline-overdue { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; background: rgba(244, 63, 94, 0.15); color: #fb7185; border: 1px solid rgba(244, 63, 94, 0.3); }
 :root[data-theme="light"] .deadline-overdue { color: #be123c; }
+
+/* Bilan de confidentialité (paramètres, assistant de démarrage) */
+.data-flow-list { display: flex; flex-direction: column; gap: 6px; font-size: 11px; }
+.data-flow-list li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; }
+.data-flow-label { color: #94a3b8; }
+.data-flow-dest { font-weight: 600; }
+.data-flow-local { color: #34d399; }
+.data-flow-cloud { color: #fbbf24; }
+.data-flow-verdict { margin-top: 4px; padding-top: 6px; border-top: 1px solid rgba(255, 255, 255, 0.08); font-weight: 700; }
+:root[data-theme="light"] .data-flow-label { color: #475569; }
+:root[data-theme="light"] .data-flow-local { color: #047857; }
+:root[data-theme="light"] .data-flow-cloud { color: #b45309; }
+:root[data-theme="light"] .data-flow-verdict { border-top-color: rgba(15, 23, 42, 0.1); }
+
+/* Assistant de démarrage */
+.wizard-steps { display: flex; gap: 6px; font-size: 10px; font-weight: 600; color: #64748b; counter-reset: step; }
+.wizard-steps li { flex: 1; padding-top: 6px; border-top: 3px solid rgba(148, 163, 184, 0.25); }
+.wizard-steps li.done { color: #a5b4fc; border-top-color: rgba(99, 102, 241, 0.5); }
+.wizard-steps li.current { color: #e2e8f0; border-top-color: #6366f1; }
+:root[data-theme="light"] .wizard-steps li.current { color: #0f172a; }
+.wizard-card { display: flex; flex-direction: column; gap: 3px; padding: 12px; border-radius: 14px; font-size: 11px; color: #94a3b8; background: rgba(30, 41, 59, 0.45); border: 1px solid rgba(255, 255, 255, 0.06); }
+.wizard-card strong { color: #e2e8f0; font-size: 12px; }
+:root[data-theme="light"] .wizard-card { background: rgba(241, 245, 249, 0.9); border-color: rgba(203, 213, 225, 0.8); color: #475569; }
+:root[data-theme="light"] .wizard-card strong { color: #0f172a; }

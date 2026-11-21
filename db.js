@@ -20,7 +20,7 @@
     local_llm_type: 'ollama',
     local_llm_url: 'http://localhost:11434/v1',
     local_llm_model: 'llama3.2',
-    local_stt_mode: 'cloud',
+    local_stt_mode: 'local', // 100 % sur site par défaut : l'audio ne part jamais vers Gemini sans choix explicite
     on_prem_llm_url: 'http://localhost:11434/v1',
     on_prem_llm_model: 'llama3.2',
     on_prem_stt_url: 'http://localhost:8000/v1',
@@ -544,7 +544,7 @@ Chaque ligne de la transcription commence par son numéro (#1, #2...). ${REFS_RU
 
   async function processRecording(audioFiles, cfg, ctx) {
     if (cfg.provider === 'gemini') return processWithGemini(audioFiles, cfg, ctx);
-    if ((cfg.local_stt_mode || 'cloud') === 'cloud') {
+    if (cfg.local_stt_mode === 'cloud') { // mode Hybride, choisi explicitement : transcription par Gemini
       const transcription = await transcribeWithGemini(audioFiles, cfg, ctx);
       return summarizeWithLocalLLM(transcription, audioFiles, cfg, ctx);
     }
@@ -891,11 +891,40 @@ ${EDIT_RULE}`;
     }
     const { model, base } = localChatUrl(cfg);
     const t0 = performance.now();
+    let llmMsg;
     try {
       await localChat(cfg, [{ role: 'user', content: 'ping' }], 0, 30000);
-      return { success: true, message: `Connexion au LLM local réussie (${model}) en ${Math.round(performance.now() - t0)} ms !` };
+      llmMsg = `LLM « ${model} » joignable (${Math.round(performance.now() - t0)} ms)`;
     } catch (err) {
       return { success: false, message: `Impossible de joindre le modèle local '${model}' sur ${base} : ${corsHint(err)}` };
+    }
+    if (cfg.local_stt_mode === 'cloud') {
+      return { success: true, message: `${llmMsg}. ⚠️ Mode Hybride : la transcription (l'audio) part chez Google (Gemini).` };
+    }
+    const stt = await testWhisper(cfg);
+    return stt.ok
+      ? { success: true, message: `${llmMsg} ; Whisper « ${stt.model} » joignable (${stt.ms} ms). Tout reste sur vos serveurs.` }
+      : { success: false, message: `${llmMsg}, mais le serveur Whisper ne répond pas : ${stt.error}` };
+  }
+
+  /** Serveur Whisper : transcription d'une demi-seconde de silence (vérifie l'URL, la clé et le CORS). */
+  async function testWhisper(cfg) {
+    const url = (cfg.on_prem_stt_url || 'http://localhost:8000/v1').trim().replace(/\/+$/, '');
+    const model = cfg.on_prem_stt_model || 'whisper-1';
+    const rate = 16000, samples = rate / 2;
+    const buf = new ArrayBuffer(44 + samples * 2);
+    const v = new DataView(buf);
+    const ascii = (o, t) => [...t].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+    ascii(0, 'RIFF'); v.setUint32(4, 36 + samples * 2, true); ascii(8, 'WAVE'); ascii(12, 'fmt ');
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, rate, true);
+    v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); ascii(36, 'data'); v.setUint32(40, samples * 2, true);
+    const t0 = performance.now();
+    try {
+      await transcribeWhisperLocal({ blob: new Blob([buf], { type: 'audio/wav' }), filename: 'test.wav' }, url, model,
+        cfg.on_prem_stt_api_key || cfg.local_llm_api_key);
+      return { ok: true, model, ms: Math.round(performance.now() - t0) };
+    } catch (err) {
+      return { ok: false, error: `${url} : ${corsHint(err)}` };
     }
   }
 

@@ -155,8 +155,11 @@ async function init() {
   setupEventListeners();
   initCanvas();
 
-  // Si pas de clé d'API Gemini et provider Gemini, ouvrir les réglages pour guider l'utilisateur
-  if (state.config.provider === 'gemini' && !state.config.gemini_api_key && !cloudDisabled()) {
+  // Premier lancement : assistant de démarrage (IA, Confluence, première série)
+  if (window.VoxOnboarding && VoxOnboarding.shouldAutoOpen()) {
+    setTimeout(() => VoxOnboarding.open(), 400);
+  } else if (state.config.provider === 'gemini' && !state.config.gemini_api_key && !cloudDisabled()) {
+    // Sans clé d'API Gemini, ouvrir les réglages pour guider l'utilisateur
     setTimeout(() => {
       openSettingsModal();
       showToast('Bienvenue ! Configurez votre clé d’API Gemini pour démarrer.', '✨');
@@ -186,9 +189,10 @@ function updateProviderBadge() {
     elements.providerDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
     elements.providerName.textContent = `Cloud (${state.config.gemini_model || 'gemini-3.5-flash-lite'})`;
   } else {
-    elements.providerDot.className = 'w-2 h-2 rounded-full bg-purple-400 animate-pulse';
     const model = state.config.local_llm_model || state.config.on_prem_llm_model || 'Local';
-    elements.providerName.textContent = `LLM Local (${model})`;
+    const hybrid = state.config.local_stt_mode === 'cloud' && !cloudDisabled();
+    elements.providerDot.className = `w-2 h-2 rounded-full ${hybrid ? 'bg-amber-400' : 'bg-purple-400'} animate-pulse`;
+    elements.providerName.textContent = hybrid ? `LLM local (${model}) + transcription Google` : `🔒 100 % sur site (${model})`;
   }
 }
 
@@ -247,7 +251,7 @@ function openSettingsModal() {
   }
 
   // Configurer mode STT
-  const sttMode = state.config.local_stt_mode || 'cloud';
+  const sttMode = cloudDisabled() ? 'local' : (state.config.local_stt_mode || 'local');
   const radio = document.querySelector(`input[name="local_stt_mode"][value="${sttMode}"]`);
   if (radio) radio.checked = true;
 
@@ -262,6 +266,7 @@ function openSettingsModal() {
   elements.testConnStatus.textContent = '';
   if (elements.detectModelsStatus) elements.detectModelsStatus.textContent = '';
   
+  refreshSettingsDataFlows();
   elements.settingsModal.classList.remove('hidden');
   elements.settingsModal.classList.add('flex');
   elements.settingsModal.style.display = 'flex';
@@ -290,6 +295,7 @@ function updateModalProviderUI() {
     elements.onPremConfigSection.classList.remove('hidden');
     elements.geminiConfigSection.classList.add('hidden');
   }
+  refreshSettingsDataFlows();
 }
 
 async function detectLocalModels() {
@@ -345,27 +351,63 @@ async function detectLocalModels() {
   }
 }
 
-async function testConnection() {
-  elements.testConnStatus.textContent = 'Test en cours...';
-  elements.testConnStatus.className = 'text-xs text-amber-400 truncate max-w-[280px] animate-pulse';
-
+/** Réglages IA tels qu'affichés dans la fenêtre des paramètres. */
+function readAiForm() {
   const selectedSttRadio = document.querySelector('input[name="local_stt_mode"]:checked');
-  const localSttMode = selectedSttRadio ? selectedSttRadio.value : 'cloud';
-
-  const payload = {
+  const localLlmModel = elements.onPremLlmModel.value.trim() || 'llama3.2';
+  const localLlmUrl = elements.onPremLlmUrl.value.trim() || 'http://localhost:11434/v1';
+  return {
     provider: state.modalProvider === 'on_prem' ? 'local' : 'gemini',
     gemini_api_key: elements.geminiApiKeyInput.value.trim(),
     gemini_model: elements.geminiModelSelect.value,
-    local_llm_url: elements.onPremLlmUrl.value.trim(),
-    local_llm_model: elements.onPremLlmModel.value.trim(),
-    local_stt_mode: localSttMode,
-    on_prem_llm_url: elements.onPremLlmUrl.value.trim(),
-    on_prem_llm_model: elements.onPremLlmModel.value.trim(),
+    local_llm_url: localLlmUrl,
+    local_llm_model: localLlmModel,
+    local_stt_mode: cloudDisabled() ? 'local' : (selectedSttRadio ? selectedSttRadio.value : 'local'),
+    on_prem_llm_url: localLlmUrl,
+    on_prem_llm_model: localLlmModel,
     on_prem_stt_url: elements.onPremSttUrl.value.trim(),
     on_prem_stt_model: elements.onPremSttModel.value.trim() || 'whisper-1',
     on_prem_stt_api_key: elements.onPremSttApiKey.value.trim(),
     local_llm_api_key: elements.localLlmApiKey.value.trim()
   };
+}
+
+const hostOf = (url) => { try { return new URL(url).host; } catch { return String(url || ''); } };
+
+/**
+ * Bilan de confidentialité : pour chaque traitement, où partent les données avec ces réglages.
+ * cloud = true quand la donnée quitte l'entreprise.
+ */
+function dataFlows(cfg) {
+  const policy = cloudDisabled();
+  const gemini = !policy && cfg.provider === 'gemini';
+  const hybrid = !policy && !gemini && cfg.local_stt_mode === 'cloud';
+  const llm = cfg.local_llm_url || cfg.on_prem_llm_url;
+  const flows = [
+    { label: 'Audio → transcription', dest: gemini || hybrid ? 'Google (Gemini)' : `Whisper · ${hostOf(cfg.on_prem_stt_url)}`, cloud: gemini || hybrid },
+    { label: 'Texte → synthèse et assistant', dest: gemini ? 'Google (Gemini)' : `LLM · ${hostOf(llm)}`, cloud: gemini },
+    { label: 'Transcription en direct', dest: policy || (!gemini && !hybrid) ? 'Désactivée' : 'Navigateur → Google / Microsoft (si activée)', cloud: !(policy || (!gemini && !hybrid)) },
+    { label: 'Comptes rendus publiés', dest: cfg.confluence_url ? `Confluence · ${hostOf(cfg.confluence_url)}` : 'Confluence non configuré', cloud: false },
+    { label: 'Enregistrements et réglages', dest: 'Ce navigateur uniquement', cloud: false }
+  ];
+  return { flows, onPrem: !flows.some(f => f.cloud) };
+}
+
+function renderDataFlows(listEl, cfg) {
+  if (!listEl) return;
+  const { flows, onPrem } = dataFlows(cfg);
+  listEl.innerHTML = flows.map(f => `<li><span class="data-flow-label">${escapeHtml(f.label)}</span><span class="data-flow-dest ${f.cloud ? 'data-flow-cloud' : 'data-flow-local'}">${f.cloud ? '☁️' : '🔒'} ${escapeHtml(f.dest)}</span></li>`).join('') +
+    `<li class="data-flow-verdict ${onPrem ? 'data-flow-local' : 'data-flow-cloud'}">${onPrem ? '✅ 100 % sur site : rien ne quitte l’entreprise.' : '⚠️ Une partie des données part vers un service cloud.'}</li>`;
+}
+
+function refreshSettingsDataFlows() {
+  renderDataFlows(document.getElementById('dataFlowList'), { ...state.config, ...readAiForm(), ...(window.VoxConfluence ? VoxConfluence.readSettings() : {}) });
+}
+
+async function testConnection() {
+  elements.testConnStatus.textContent = 'Test en cours...';
+  elements.testConnStatus.className = 'text-xs text-amber-400 truncate max-w-[280px] animate-pulse';
+  const payload = readAiForm();
 
   try {
     const res = await fetch('/api/test-connection', {
@@ -388,26 +430,7 @@ async function testConnection() {
 }
 
 async function saveSettings() {
-  const selectedSttRadio = document.querySelector('input[name="local_stt_mode"]:checked');
-  const localSttMode = selectedSttRadio ? selectedSttRadio.value : 'cloud';
-  const localLlmModel = elements.onPremLlmModel.value.trim() || 'llama3.2';
-  const localLlmUrl = elements.onPremLlmUrl.value.trim() || 'http://localhost:11434/v1';
-
-  const payload = {
-    provider: state.modalProvider === 'on_prem' ? 'local' : 'gemini',
-    gemini_api_key: elements.geminiApiKeyInput.value.trim(),
-    gemini_model: elements.geminiModelSelect.value,
-    local_llm_url: localLlmUrl,
-    local_llm_model: localLlmModel,
-    local_stt_mode: localSttMode,
-    on_prem_llm_url: localLlmUrl,
-    on_prem_llm_model: localLlmModel,
-    on_prem_stt_url: elements.onPremSttUrl.value.trim(),
-    on_prem_stt_model: elements.onPremSttModel.value.trim() || 'whisper-1',
-    on_prem_stt_api_key: elements.onPremSttApiKey.value.trim(),
-    local_llm_api_key: elements.localLlmApiKey.value.trim(),
-    ...(window.VoxConfluence ? VoxConfluence.readSettings() : {})
-  };
+  const payload = { ...readAiForm(), ...(window.VoxConfluence ? VoxConfluence.readSettings() : {}) };
 
   try {
     const res = await fetch('/api/config', {
@@ -419,6 +442,7 @@ async function saveSettings() {
     if (data.success) {
       state.config = { ...state.config, ...payload };
       updateProviderBadge();
+      document.dispatchEvent(new CustomEvent('voxai:config-changed'));
       closeSettingsModal();
       showToast('Configuration enregistrée avec succès !', '✅');
     }
@@ -1724,8 +1748,15 @@ const MAIL_TARGETS = {
   mailto: { label: 'Messagerie par défaut', hint: 'Lien mailto vers la messagerie configurée sur l’ordinateur (texte simple)' }
 };
 
+/** Messageries proposées : Gmail (service externe) est retiré sous la politique « sans cloud ». */
+function mailTargets() {
+  if (!cloudDisabled()) return MAIL_TARGETS;
+  const { gmail, ...rest } = MAIL_TARGETS; // eslint-disable-line no-unused-vars
+  return rest;
+}
+
 function getMailTarget() {
-  try { return MAIL_TARGETS[localStorage.getItem('voxai_mail_target')] ? localStorage.getItem('voxai_mail_target') : 'desktop'; }
+  try { return mailTargets()[localStorage.getItem('voxai_mail_target')] ? localStorage.getItem('voxai_mail_target') : 'desktop'; }
   catch { return 'desktop'; }
 }
 
@@ -1769,7 +1800,7 @@ function buildMailButton(email) {
   const menu = document.createElement('div');
   menu.className = 'mail-menu hidden';
   menu.setAttribute('role', 'menu');
-  Object.entries(MAIL_TARGETS).forEach(([key, t]) => {
+  Object.entries(mailTargets()).forEach(([key, t]) => {
     const item = document.createElement('button');
     item.type = 'button';
     item.setAttribute('role', 'menuitem');
@@ -2397,6 +2428,10 @@ function setupEventListeners() {
   }
 
   // STT Mode Toggle (Cloud vs Local Whisper)
+  // Bilan de confidentialité recalculé à chaque changement de réglage
+  document.getElementById('settingsModal').addEventListener('input', refreshSettingsDataFlows);
+  document.getElementById('settingsModal').addEventListener('change', refreshSettingsDataFlows);
+
   document.querySelectorAll('input[name="local_stt_mode"]').forEach(radio => {
     radio.addEventListener('change', () => {
       if (elements.whisperLocalConfigContainer) {

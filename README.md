@@ -132,18 +132,23 @@ Côté serveur, l'origine de VoxAI (adresse GitHub Pages ou du conteneur Docker)
 
 ## 🏭 Déploiement en entreprise (sans Internet)
 
+📖 **Guide complet : [docs/DEPLOIEMENT-DOCKER.md](docs/DEPLOIEMENT-DOCKER.md)** (prérequis, 100 % sur site, HTTPS et reverse proxy, CORS, vérification, mises à jour, dépannage).
+
 L'interface ne charge **aucune ressource externe** : styles et polices sont servis par l'application (`vendor/`). Avec l'image Docker, l'administrateur peut fixer les réglages de tous les utilisateurs par des variables d'environnement ; ils n'ont alors rien à configurer.
+
+**100 % sur site par défaut** : dès que le LLM de l'entreprise est choisi, la transcription passe par le serveur Whisper (le mode Hybride, qui envoie l'audio à Google, ne s'active que sur choix explicite) et la transcription en direct du navigateur est coupée. Le bilan **🛡️ Où partent vos données** (⚙️ Paramètres, assistant de démarrage) l'affiche pour chaque traitement.
 
 | Variable | Rôle | Exemple |
 | :--- | :--- | :--- |
-| `VOXAI_DISABLE_CLOUD` | `true` : impose le mode 100 % interne (Gemini, mode Hybride et transcription en direct du navigateur désactivés et masqués) | `true` |
+| `VOXAI_DISABLE_CLOUD` | `true` : impose le mode 100 % interne (Gemini, mode Hybride, transcription en direct du navigateur et Gmail désactivés et masqués) et limite les connexions du navigateur aux serveurs déclarés ci-dessous | `true` |
 | `VOXAI_PROVIDER` | Moteur par défaut : `local` ou `gemini` | `local` |
 | `VOXAI_LLM_URL` / `VOXAI_LLM_MODEL` | Serveur LLM compatible OpenAI et modèle | `https://ia.entreprise.fr/v1` / `gpt-oss-120b` |
 | `VOXAI_LLM_API_KEY` | Clé partagée (facultatif, voir ⚠️) | |
-| `VOXAI_STT_MODE` | `local` (Whisper interne) ou `cloud` | `local` |
+| `VOXAI_STT_MODE` | `local` (Whisper interne, par défaut) ou `cloud` (Hybride : audio vers Google) | `local` |
 | `VOXAI_STT_URL` / `VOXAI_STT_MODEL` / `VOXAI_STT_API_KEY` | Serveur de transcription Whisper | `https://ia.entreprise.fr/v1` / `whisper-large-v3` |
 | `VOXAI_LANGUAGE` | Langue des enregistrements | `fr` |
 | `VOXAI_CONFLUENCE_URL` | URL Confluence pré-remplie (sinon `CONFLUENCE_URL` active le proxy) | |
+| `VOXAI_CSP_CONNECT_SRC` | Serveurs joignables par le navigateur (remplace la restriction automatique du mode 100 % interne) | `'self' https://ia.entreprise.fr` |
 
 ```bash
 docker run -d -p 8080:80 \
@@ -156,6 +161,10 @@ docker run -d -p 8080:80 \
 
 - Ces valeurs sont les réglages **par défaut** : un utilisateur peut les modifier, et seul ce qu'il change est enregistré ; si l'administrateur fait évoluer une URL ou un modèle, tous les autres en profitent. `VOXAI_DISABLE_CLOUD` s'impose toujours.
 - ⚠️ `VOXAI_LLM_API_KEY` est lisible par toute personne ayant accès à la page (`/voxai-defaults.json`) : réservez-la à un réseau interne, ou laissez chaque utilisateur saisir sa clé personnelle.
+
+### Assistant de démarrage
+
+Au premier lancement, un assistant guide la configuration en 5 étapes : moteur d'IA (serveurs de l'entreprise ou Gemini, avec **test du LLM et du serveur Whisper**), Confluence, première série de réunions, puis bilan de confidentialité. Les réglages et la politique de l'administrateur sont repris. Il se relance depuis ⚙️ Paramètres → **🧭 Assistant de démarrage**.
 
 ### Modifier l'interface
 
@@ -237,6 +246,7 @@ VoXAI/
 ├── confluence.js # Publication des comptes rendus dans Confluence (PAT)
 ├── live.js      # Transcription en direct (reconnaissance vocale du navigateur)
 ├── series.js    # Séries de réunions (participants, Confluence, e-mail, suivi des actions, brief)
+├── onboarding.js # Assistant de démarrage (IA, Confluence, première série, bilan de confidentialité)
 ├── style.css    # Styles et animations
 ├── vendor/      # Styles Tailwind et polices générés (npm run build) : aucun CDN
 ├── start.sh     # Serveur statique pour un usage local

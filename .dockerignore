@@ -5,6 +5,7 @@
 !confluence.js
 !live.js
 !series.js
+!onboarding.js
 !theme-init.js
 !docker/20-voxai-security.sh
 !vendor/**

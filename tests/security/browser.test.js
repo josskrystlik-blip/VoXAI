@@ -64,7 +64,7 @@ async function scenario(name, fn) {
 function assert(cond, msg) { if (!cond) throw new Error(msg); }
 
 /** Contexte navigateur isolé, Internet bloqué, Gemini / Confluence simulés. */
-async function openApp(browser, baseUrl, { gemini, confluence } = {}) {
+async function openApp(browser, baseUrl, { gemini, confluence, servers = {} } = {}) {
   const context = await browser.newContext({ viewport: { width: 1360, height: 950 }, acceptDownloads: true });
   const blocked = [];
   const geminiUrls = [];
@@ -78,9 +78,12 @@ async function openApp(browser, baseUrl, { gemini, confluence } = {}) {
       return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ candidates: [{ content: { parts: [{ text }] } }] }) });
     }
     if (url.hostname === 'confluence.test' && confluence) return confluence(route);
+    if (servers[url.hostname]) return servers[url.hostname](route);
     blocked.push(url.href);
     return route.abort();
   });
+  // L'assistant de démarrage (premier lancement) ne doit pas masquer l'interface testée
+  await context.addInitScript(() => { try { localStorage.setItem('voxai_onboarded', 'test'); } catch {} });
   const page = await context.newPage();
   page.jsErrors = [];
   page.dialogs = [];
@@ -387,6 +390,33 @@ function maliciousBackup() {
     await page.click('#followTabBrief');
     await page.waitForTimeout(500);
     await assertClean(page, 'suivi des actions (synthèse, fenêtre de suivi, brief)');
+    await context.close();
+  });
+
+  await scenario('100 % sur site : aucune requête vers Google, même avec une clé Gemini enregistrée', async () => {
+    const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' };
+    const calls = { llm: 0, whisper: 0 };
+    const reply = (route, body) => route.request().method() === 'OPTIONS'
+      ? route.fulfill({ status: 204, headers: cors })
+      : route.fulfill({ headers: cors, contentType: 'application/json', body: JSON.stringify(body) });
+    const { context, page, geminiUrls } = await openApp(browser, base, {
+      gemini: () => { throw new Error('Gemini ne doit pas être appelé'); },
+      servers: {
+        'llm.corp.test': (route) => { calls.llm++; return reply(route, { choices: [{ message: { content: JSON.stringify({ title: 'R', summary: { executive: 'sur site', decisions: [], key_points: [], tags: [], action_items: [] } }) } }] }); },
+        'whisper.corp.test': (route) => { calls.whisper++; return reply(route, { text: 'bonjour' }); }
+      }
+    });
+    await page.evaluate(() => { localStorage.setItem('voxai_onboarded', '1'); return fetch('/api/config', { method: 'POST', body: JSON.stringify({
+      provider: 'local', local_llm_url: 'https://llm.corp.test/v1', local_llm_model: 'gpt-oss-120b',
+      on_prem_stt_url: 'https://whisper.corp.test/v1', gemini_api_key: 'cle-gemini-presente' }) }); });
+    await page.reload();
+    await page.waitForFunction(() => typeof state !== 'undefined' && state.config);
+    await page.waitForTimeout(600);
+    assert(await page.isDisabled('#liveToggle'), 'transcription en direct (audio vers Google / Microsoft) disponible en mode 100 % sur site');
+    await page.setInputFiles('#fileUploadInput', AUDIO);
+    await page.waitForFunction(() => state.activeRecording && state.activeRecording.status !== 'processing' && state.activeRecording.summary, null, { timeout: 15000 });
+    assert(geminiUrls.length === 0, `requête(s) vers Google : ${geminiUrls.join(' | ')}`);
+    assert(calls.whisper >= 1 && calls.llm >= 1, `serveurs internes non utilisés (Whisper ${calls.whisper}, LLM ${calls.llm})`);
     await context.close();
   });
 

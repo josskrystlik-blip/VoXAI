@@ -31,8 +31,23 @@
     try { return !!(state.config && state.config.policy && state.config.policy.disable_cloud); } catch { return false; }
   }
 
+  /**
+   * Mode « 100 % sur site » (LLM et Whisper de l'entreprise) : la reconnaissance vocale du
+   * navigateur enverrait l'audio à Google ou Microsoft, elle est donc coupée.
+   */
+  function onPremOnly() {
+    try { return !!state.config && state.config.provider !== 'gemini' && state.config.local_stt_mode !== 'cloud'; } catch { return false; }
+  }
+
+  function blockedReason() {
+    if (cloudPolicyOff()) return 'Désactivée par votre administrateur (mode 100 % interne).';
+    if (onPremOnly()) return 'Désactivée en mode 100 % sur site : la reconnaissance vocale du navigateur enverrait l’audio à Google ou Microsoft.';
+    if (!SR) return 'Non disponible dans ce navigateur : utilisez Chrome ou Edge.';
+    return '';
+  }
+
   function enabled() {
-    if (cloudPolicyOff()) return false;
+    if (cloudPolicyOff() || onPremOnly()) return false;
     try { return localStorage.getItem(STORAGE_KEY) === 'on'; } catch { return false; }
   }
 
@@ -191,24 +206,26 @@
     }
   };
 
-  function setup() {
+  /** Interrupteur disponible ou non selon la politique, le mode choisi et le navigateur. */
+  function refreshAvailability() {
     const toggle = $('liveToggle');
     if (!toggle) return;
-    if (cloudPolicyOff()) {
+    const reason = blockedReason();
+    toggle.disabled = !!reason;
+    $('liveToggleLabel').classList.toggle('opacity-50', !!reason);
+    if (reason) {
       toggle.checked = false;
-      toggle.disabled = true;
-      $('liveToggleLabel').classList.add('opacity-50');
-      setStatus('Désactivée par votre administrateur (mode 100 % interne).', 'warn');
-      return;
-    }
-    if (!SR) {
-      toggle.disabled = true;
-      $('liveToggleLabel').classList.add('opacity-50');
-      setStatus('Non disponible dans ce navigateur : utilisez Chrome ou Edge.', 'warn');
+      if (live.active) safeStop();
+      setStatus(reason, 'warn');
       return;
     }
     toggle.checked = enabled();
-    setStatus(enabled() ? 'Activée' : '');
+    if (!live.active) setStatus(enabled() ? 'Activée' : '');
+  }
+
+  function setup() {
+    const toggle = $('liveToggle');
+    if (!toggle) return;
     toggle.addEventListener('change', () => {
       setEnabled(toggle.checked);
       if (!live.active) { setStatus(toggle.checked ? 'Activée' : ''); return; }
@@ -222,8 +239,10 @@
         setStatus('Désactivée');
       }
     });
+    refreshAvailability();
+    // Réglages modifiés (paramètres, assistant de démarrage) : disponibilité recalculée
+    document.addEventListener('voxai:config-changed', refreshAvailability);
   }
 
-  // Après le chargement de la configuration par app.js (politique « sans cloud » comprise)
   document.addEventListener('voxai:config-loaded', setup, { once: true });
 })();
