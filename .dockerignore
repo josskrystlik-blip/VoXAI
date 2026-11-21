@@ -6,6 +6,9 @@
 !live.js
 !series.js
 !onboarding.js
+!sw.js
+!manifest.webmanifest
+!icons/**
 !theme-init.js
 !docker/20-voxai-security.sh
 !vendor/**

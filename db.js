@@ -748,7 +748,7 @@ ${EDIT_RULE}`;
       filename: str(r.filename, 300),
       mime_type: str(r.mime_type, 100) || 'audio/webm',
       file_size: Math.max(0, Number(r.file_size) || 0),
-      status: ['recorded', 'completed', 'error'].includes(r.status) ? r.status : 'recorded',
+      status: ['recorded', 'pending', 'completed', 'error'].includes(r.status) ? r.status : 'recorded',
       transcription,
       summary: r.summary && typeof r.summary === 'object' ? sanitizeSummary(r.summary, null, transcription.length) : null,
       error_message: r.error_message ? str(r.error_message, 2000) : null,
@@ -867,6 +867,14 @@ ${EDIT_RULE}`;
       .filter(a => a.status !== 'done' && a.rec_id !== rec.id && a.meeting_date < rec.created_at)
       .slice(-40)
       .map((a, i) => ({ ...a, id: `A${i + 1}`, meeting_date: frDate(a.meeting_date) }));
+  }
+
+  const OFFLINE_MSG = "Serveur d'IA injoignable (hors ligne) : l'enregistrement est conservé, lancez l'analyse quand le réseau est revenu.";
+
+  /** Échec réseau (pas de connexion, serveur injoignable) par opposition à une erreur renvoyée par l'IA. */
+  function isNetworkError(err) {
+    if (navigator.onLine === false) return true;
+    return /failed to fetch|networkerror|load failed|network request failed|err_internet|err_name_not_resolved|err_connection/i.test(String(err && err.message || err));
   }
 
   function corsHint(err) {
@@ -1171,6 +1179,11 @@ ${EDIT_RULE}`;
       if (action === 'process' && method === 'POST') {
         const rec = await store.get('recordings', recId);
         if (!rec) return json(404, { error: 'Enregistrement non trouvé' });
+        // Hors ligne : l'enregistrement est conservé et mis en attente d'analyse
+        if (navigator.onLine === false) {
+          await store.put('recordings', { ...rec, status: 'pending', error_message: OFFLINE_MSG });
+          return json(503, { success: false, offline: true, error: OFFLINE_MSG });
+        }
         const files = await getFiles(recId);
         if (!files.length) return json(400, { error: 'Aucun fichier audio trouvé pour cette session.' });
         const audioFiles = files.map(f => ({
@@ -1202,8 +1215,10 @@ ${EDIT_RULE}`;
           return json(200, { success: true, title: saved && saved.title, transcription: saved && saved.transcription, summary: saved && saved.summary });
         } catch (err) {
           const fresh = await store.get('recordings', recId);
-          if (fresh) await store.put('recordings', { ...fresh, status: 'error', error_message: err.message });
-          return json(500, { success: false, error: err.message });
+          // Serveur d'IA injoignable (réseau coupé, VPN absent…) : en attente plutôt qu'en erreur
+          const offline = isNetworkError(err);
+          if (fresh) await store.put('recordings', { ...fresh, status: offline ? 'pending' : 'error', error_message: offline ? OFFLINE_MSG : err.message });
+          return json(offline ? 503 : 500, { success: false, offline, error: offline ? OFFLINE_MSG : err.message });
         }
       }
 

@@ -28,7 +28,12 @@ Dictaphone web boosté par l'Intelligence Artificielle (**Google Gemini** ou **L
    - **Mode On-Premise (Local / Privé)** : Connectez vos modèles locaux (**Ollama**, **vLLM**, **faster-whisper**) pour une conformité RGPD totale sans fuite de données vers l'extérieur.
    - Bouton **"Tester la connexion"** intégré pour valider l'accès en 1 seconde.
 
-4. **100 % local, aucun serveur** :
+4. **Application installable, utilisable hors ligne (PWA)** :
+   - Bouton **📲 Installer** (Chrome, Edge) ou « Sur l'écran d'accueil » (Safari) : VoxAI s'ouvre comme une application, **même sans réseau**.
+   - **Le dictaphone fonctionne hors ligne** : l'audio est enregistré sur l'appareil. Si le serveur d'IA est injoignable (réseau coupé, VPN absent), l'enregistrement passe **« ⏳ En attente »** au lieu d'échouer.
+   - Au retour du réseau, un bandeau propose **🧠 Analyser maintenant** pour tous les enregistrements en attente (ou « Relancer IA » sur l'un d'eux).
+
+5. **100 % local, aucun serveur** :
    - Application web statique : fonctionne directement depuis **GitHub Pages** (ou n'importe quel hébergement statique).
    - Toutes les données (audios, transcriptions, synthèses, chat, réglages et clé d'API) sont stockées dans une **base locale du navigateur (IndexedDB)**. Rien n'est sauvegardé dans le cloud.
    - Seule l'analyse IA sort de votre machine, et uniquement vers le fournisseur que vous choisissez (Gemini, ou votre LLM local en mode 100 % hors-ligne).

@@ -62,6 +62,13 @@ check "Version de nginx masquée"                   '! grep -qiE "^server: nginx
 H2="$(curl -sI "http://127.0.0.1:$PORT_APP/app.js")"
 check "En-têtes aussi présents sur les fichiers JS" 'grep -qi "^content-security-policy:" <<<"$H2" && grep -qi "^x-frame-options:" <<<"$H2"'
 
+# --- Application installable (PWA) -------------------------------------------
+HM="$(curl -sI "http://127.0.0.1:$PORT_APP/manifest.webmanifest")"
+check "PWA : manifeste servi en application/manifest+json" 'grep -qi "^content-type: application/manifest+json" <<<"$HM"'
+check "PWA : en-têtes de sécurité sur le manifeste" 'grep -qi "^content-security-policy:" <<<"$HM"'
+HS="$(curl -sI "http://127.0.0.1:$PORT_APP/sw.js")"
+check "PWA : service worker revalidé à chaque visite (no-cache)" 'grep -qi "^cache-control: no-cache" <<<"$HS"'
+
 # --- Fichiers non exposés ---------------------------------------------------
 for p in /.git/config /.env /config.json /dictaphone.db /Dockerfile /package.json /docker/nginx.conf /tests/security/docker.sh; do
   code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT_APP$p")"

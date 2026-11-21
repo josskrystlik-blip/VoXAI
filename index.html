@@ -4,7 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>VoxAI — Dictaphone Intelligent & Transcription IA</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22%20width=%2216%22%20height=%2216%22><text y=%2214%22 font-size=%2214%22>🎙️</text></svg>">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <!-- Application installable (PWA) : fonctionne hors ligne grâce au service worker (sw.js) -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="theme-color" content="#4f46e5">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="VoxAI">
   <!-- Sécurité : seuls les scripts de l'application peuvent s'exécuter (aucun script en ligne ni externe).
        connect-src reste ouvert car les serveurs IA / Confluence sont configurables. -->
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; connect-src 'self' https: http:; object-src 'none'; base-uri 'none'; form-action 'self'">
@@ -50,6 +57,9 @@
 
     <!-- Right Controls -->
     <div class="flex items-center gap-3">
+      <!-- Hors ligne : le dictaphone fonctionne, l'analyse IA est mise en attente -->
+      <span id="offlineBadge" class="hidden items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/30" title="Le dictaphone fonctionne : les enregistrements seront analysés au retour du réseau">📴 Hors ligne</span>
+
       <!-- Active Provider Badge -->
       <button id="providerBadgeBtn" class="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-900/80 border border-white/10 hover:border-indigo-500/40 hover:bg-slate-800/60 transition shadow-sm">
         <span id="providerDot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -117,6 +127,13 @@
         <!-- Rempli dynamiquement en JS -->
       </div>
 
+      <!-- Analyses en attente (enregistrements faits hors ligne) -->
+      <div id="pendingBanner" class="hidden mx-3 mb-2 p-3 rounded-xl border border-sky-500/30 bg-sky-500/10 text-[11px] leading-snug" role="status">
+        <p id="pendingTitle" class="font-semibold text-sky-300"></p>
+        <p id="pendingText" class="text-slate-300 mt-1"></p>
+        <button type="button" id="pendingRunBtn" class="mt-2 px-2.5 py-1 rounded-lg font-semibold bg-sky-500/20 hover:bg-sky-500/30 text-sky-200 border border-sky-500/30 transition disabled:opacity-50">🧠 Analyser maintenant</button>
+      </div>
+
       <!-- Rappel de sauvegarde : les données ne vivent que dans ce navigateur -->
       <div id="backupReminder" class="hidden mx-3 mb-2 p-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-[11px] leading-snug" role="status">
         <p class="font-semibold text-amber-300">💾 Pensez à sauvegarder</p>
@@ -130,6 +147,7 @@
       <!-- Version (à mettre à jour à chaque release : la release vérifie qu'elle correspond au tag) -->
       <div class="px-4 py-2.5 border-t border-white/[0.06] flex items-center justify-between text-[11px] text-slate-500">
         <span>VoxAI <span id="appVersion" class="font-mono">v1.12.0</span></span>
+        <button type="button" id="installAppBtn" class="hidden font-semibold text-emerald-400 hover:text-emerald-300 hover:underline transition" title="Installer VoxAI comme une application (fonctionne hors ligne)">📲 Installer</button>
         <button type="button" id="versionsBtn" class="font-semibold text-indigo-400 hover:text-indigo-300 hover:underline transition" title="Historique des versions">Nouveautés</button>
       </div>
     </aside>
@@ -794,9 +812,10 @@
       </div>
       <div id="versionsList" class="overflow-y-auto p-6 space-y-5">
         <section class="version-entry">
-          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.12.0</span> — 100 % sur site par défaut et assistant de démarrage <span class="ml-1.5 px-1.5 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 text-[10px] font-semibold align-middle">Version actuelle</span></h4>
+          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.12.0</span> — Application hors ligne, 100 % sur site par défaut et assistant de démarrage <span class="ml-1.5 px-1.5 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 text-[10px] font-semibold align-middle">Version actuelle</span></h4>
           <p class="text-[11px] text-slate-500 mb-1.5">21 novembre 2026</p>
           <ul class="list-disc pl-5 space-y-1 text-xs text-slate-300">
+            <li>Application installable (PWA) : VoxAI s’ouvre et le dictaphone enregistre sans réseau ; les enregistrements faits hors ligne passent « en attente » et s’analysent d’un clic au retour du réseau.</li>
             <li>Avec le LLM de l’entreprise, la transcription passe désormais par votre serveur Whisper par défaut : l’audio ne part plus chez Google sans choix explicite (mode Hybride signalé ⚠️).</li>
             <li>Transcription en direct du navigateur coupée en mode 100 % sur site ; Gmail masqué sous la politique « sans cloud ».</li>
             <li>Bilan « 🛡️ Où partent vos données » dans les paramètres, et test de connexion qui vérifie aussi le serveur Whisper.</li>

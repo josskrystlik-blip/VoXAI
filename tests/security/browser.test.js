@@ -65,7 +65,8 @@ function assert(cond, msg) { if (!cond) throw new Error(msg); }
 
 /** Contexte navigateur isolé, Internet bloqué, Gemini / Confluence simulés. */
 async function openApp(browser, baseUrl, { gemini, confluence, servers = {} } = {}) {
-  const context = await browser.newContext({ viewport: { width: 1360, height: 950 }, acceptDownloads: true });
+  // Service worker (PWA) désactivé : les requêtes restent visibles et simulables par les tests
+  const context = await browser.newContext({ viewport: { width: 1360, height: 950 }, acceptDownloads: true, serviceWorkers: 'block' });
   const blocked = [];
   const geminiUrls = [];
   await context.route('**/*', async route => {
