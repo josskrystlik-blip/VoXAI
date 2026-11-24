@@ -1616,24 +1616,30 @@ async function copyRich(markdown, label) {
       await navigator.clipboard.writeText(plain);
     }
     showToast(`${label} copié !`, '📋');
+    return true;
   } catch (err) {
     showToast('Copie impossible : ' + err.message, '⚠️');
+    return false;
   }
 }
 
-/** Lien mailto ; les liens trop longs étant tronqués par certaines messageries, le corps est alors omis. */
 /** Adresses de destinataires sûres : format strict, sans espace, virgule ni retour à la ligne. */
 const RECIPIENT_RE = /^[A-Za-z0-9.!#$%&'*+\/=?^_`{|}~-]{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
 function recipientsOf(email) {
   return [...new Set((Array.isArray(email.to) ? email.to : []).map(a => String(a).trim()).filter(a => RECIPIENT_RE.test(a)))];
 }
 
+/** Corps mis dans le lien quand le message est trop long : le vrai corps est dans le presse-papiers. */
+const PASTE_HINT = 'Le message complet a été copié par VoxAI : collez-le ici (Ctrl+V ou Cmd+V) à la place de ce texte.';
+
+/** Lien mailto ; les liens trop longs étant tronqués par certaines messageries, le corps est alors
+ *  remplacé par une consigne de collage (le corps complet est copié dans le presse-papiers). */
 function mailtoUrl(email) {
   const to = recipientsOf(email).map(encodeURIComponent).join(',');
   const subject = encodeURIComponent(email.subject);
   const body = encodeURIComponent(stripMarkdown(email.body));
   const fits = to.length + subject.length + body.length <= 1800;
-  return { url: fits ? `mailto:${to}?subject=${subject}&body=${body}` : `mailto:${to}?subject=${subject}`, bodyIncluded: fits };
+  return { url: `mailto:${to}?subject=${subject}&body=${fits ? body : encodeURIComponent(PASTE_HINT)}`, bodyIncluded: fits };
 }
 
 /** Lien de rédaction Outlook sur le web (Microsoft 365). */
@@ -1642,7 +1648,7 @@ function outlookWebUrl(email) {
   const body = encodeURIComponent(stripMarkdown(email.body));
   const fits = subject.length + body.length <= 7000;
   const to = recipientsOf(email).map(encodeURIComponent).join(',');
-  const url = `https://outlook.office.com/mail/deeplink/compose?${to ? `to=${to}&` : ''}subject=${subject}${fits ? `&body=${body}` : ''}`;
+  const url = `https://outlook.office.com/mail/deeplink/compose?${to ? `to=${to}&` : ''}subject=${subject}&body=${fits ? body : encodeURIComponent(PASTE_HINT)}`;
   return { url, bodyIncluded: fits };
 }
 
@@ -1652,7 +1658,7 @@ function gmailUrl(email) {
   const body = encodeURIComponent(stripMarkdown(email.body));
   const fits = subject.length + body.length <= 7000;
   const to = recipientsOf(email).map(encodeURIComponent).join(',');
-  const url = `https://mail.google.com/mail/?view=cm&fs=1${to ? `&to=${to}` : ''}&su=${subject}${fits ? `&body=${body}` : ''}`;
+  const url = `https://mail.google.com/mail/?view=cm&fs=1${to ? `&to=${to}` : ''}&su=${subject}&body=${fits ? body : encodeURIComponent(PASTE_HINT)}`;
   return { url, bodyIncluded: fits };
 }
 
@@ -1775,15 +1781,22 @@ function setMailTarget(target) {
   try { localStorage.setItem('voxai_mail_target', target); } catch { /* stockage indisponible */ }
 }
 
-function openInMailClient(email, target = getMailTarget()) {
+/** Ouvre la messagerie par défaut (isolé pour les tests). */
+function launchMailto(url) { window.location.href = url; }
+
+async function openInMailClient(email, target = getMailTarget()) {
   if (target === 'desktop') return downloadEml(email);
   const { url, bodyIncluded } = target === 'web' ? outlookWebUrl(email) : target === 'gmail' ? gmailUrl(email) : mailtoUrl(email);
   if (!bodyIncluded) {
-    copyRich(email.body, 'Corps de l’e-mail').then(() =>
-      showToast('E-mail long : le corps est copié, collez-le dans le message (Ctrl+V)', '✉️'));
+    // Copier AVANT d'ouvrir la messagerie : une fois la page passée en arrière-plan,
+    // le navigateur refuse l'accès au presse-papiers et le message resterait vide.
+    const copied = await copyRich(email.body, 'Corps de l’e-mail');
+    showToast(copied
+      ? 'E-mail long : le corps est copié, collez-le dans le message (Ctrl+V)'
+      : 'E-mail trop long pour ce lien et copie impossible : utilisez « Copier l’e-mail » ou la messagerie « Outlook (application) »', copied ? '✉️' : '⚠️');
   }
   if (target === 'web' || target === 'gmail') window.open(url, '_blank', 'noopener');
-  else window.location.href = url;
+  else launchMailto(url);
 }
 
 /** Bouton « Créer le mail » + menu pour choisir la messagerie (choix mémorisé). */

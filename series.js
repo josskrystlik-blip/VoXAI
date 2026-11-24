@@ -498,7 +498,10 @@
       VoxConfluence.open({
         after: () => {
           const target = getMailTarget();
-          if (target === 'web' || target === 'gmail') return { label: '✉️ Créer l’e-mail aux participants', run: sendToParticipants };
+          // Onglet à ouvrir, ou e-mail trop long pour un lien mailto (copie du corps) : il faut un clic
+          const rec2 = state.activeRecording, series = rec2 && get(rec2.series_id);
+          const tooLong = target === 'mailto' && series && !mailtoUrl(buildParticipantsEmail(rec2, series)).bodyIncluded;
+          if (target === 'web' || target === 'gmail' || tooLong) return { label: '✉️ Créer l’e-mail aux participants', run: sendToParticipants };
           sendToParticipants(); // Outlook (fichier .eml) ou messagerie par défaut : ouverture directe
           return null;
         }
