@@ -49,8 +49,19 @@ function multipartFile(req) {
   return null;
 }
 
+/** Caractères sur 4 octets (emojis) : refusés par une base MySQL en utf8 (Data Center). */
+const FOUR_BYTES = /[\u{10000}-\u{10FFFF}]/u;
+const DC_BASE = 'https://intranet.corp.test:8090/confluence';
+
 class FakeConfluence {
-  constructor() {
+  /**
+   * dc : Confluence Data Center sur site : chemin /confluence et port 8090, liens viewpage.action,
+   * pas d'envoi de pièce jointe par PUT (405), base MySQL utf8 (emojis refusés), authentification
+   * vérifiée (jeton personnel ou identifiant + mot de passe).
+   */
+  constructor({ dc = false } = {}) {
+    this.dc = dc;
+    this.host = dc ? 'intranet.corp.test' : CF_HOST;
     this.log = [];
     this.down = false;          // serveur injoignable (erreur réseau / CORS)
     this.fail = {};             // « MÉTHODE /chemin » (expression régulière) → { status, body }
@@ -73,7 +84,7 @@ class FakeConfluence {
     this.labels = {};           // pageId → [noms]
   }
 
-  links(p) { return { base: CF_BASE, webui: `/spaces/${p.space}/pages/${p.id}` }; }
+  links(p) { return this.dc ? { base: DC_BASE, webui: `/pages/viewpage.action?pageId=${p.id}` } : { base: CF_BASE, webui: `/spaces/${p.space}/pages/${p.id}` }; }
   calls(re) { return this.log.filter(c => re.test(`${c.method} ${c.path}`)); }
 
   async handle(route) {
@@ -87,6 +98,17 @@ class FakeConfluence {
     this.log.push(entry);
     const send = (o, status = 200) => route.fulfill({ status, headers: CORS, contentType: 'application/json', body: JSON.stringify(o) });
 
+    if (this.dc) {
+      // Data Center : chemin de contexte, authentification contrôlée, format d'erreur du serveur
+      if (!url.pathname.startsWith('/confluence/rest/api/')) return send({ message: 'Not Found' }, 404);
+      const okAuth = ['Bearer pat-secret', 'Basic ' + Buffer.from('jdupont:motdepasse').toString('base64')];
+      if (!okAuth.includes(entry.auth)) return send({ statusCode: 401, message: 'Basic Authentication Failure - Reason : AUTHENTICATED_FAILED' }, 401);
+      if (entry.method === 'PUT' && /\/child\/attachment$/.test(p)) return send({ statusCode: 405, message: 'HTTP 405 Method Not Allowed' }, 405);
+      // Base MySQL en utf8 : tout caractère sur 4 octets fait échouer l'écriture (page, titre, étiquette)
+      if (['POST', 'PUT'].includes(entry.method) && /^\/content(\/\d+)?(\/label)?$/.test(p) && FOUR_BYTES.test(JSON.stringify(entry.body || ''))) {
+        return send({ statusCode: 500, message: "com.atlassian.confluence.api.service.exceptions.ServiceException: could not execute statement; SQL [n/a]; nested exception is java.sql.SQLException: Incorrect string value: '\\xF0\\x9F\\x9A\\x80' for column 'BODY' at row 1" }, 500);
+      }
+    }
     for (const [pattern, res] of Object.entries(this.fail)) {
       if (new RegExp(pattern).test(`${entry.method} ${p}`)) return send(res.body || {}, res.status);
     }
@@ -181,7 +203,7 @@ const SUMMARY = {
 
 const CONFIG = { gemini_api_key: 'cle-test', confluence_url: CF_BASE, confluence_auth: 'pat', confluence_token: 'pat-secret' };
 
-async function openApp(browser, baseUrl, fake, { config = CONFIG } = {}) {
+async function openApp(browser, baseUrl, fake, { config = CONFIG, analysis = SUMMARY } = {}) {
   const context = await browser.newContext({ viewport: { width: 1360, height: 950 }, acceptDownloads: true, serviceWorkers: 'block' });
   const blocked = [];
   await context.route('**/*', async route => {
@@ -189,9 +211,9 @@ async function openApp(browser, baseUrl, fake, { config = CONFIG } = {}) {
     if (url.hostname === '127.0.0.1' && url.pathname.startsWith('/confluence/')) return fake.handle(route); // relais du conteneur
     if (url.hostname === '127.0.0.1' || url.protocol === 'blob:' || url.protocol === 'data:') return route.continue();
     if (url.hostname === 'generativelanguage.googleapis.com') {
-      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(SUMMARY) }] } }] }) });
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ candidates: [{ content: { parts: [{ text: JSON.stringify(analysis) }] } }] }) });
     }
-    if (url.hostname === CF_HOST) return fake.handle(route);
+    if (url.hostname === fake.host) return fake.handle(route);
     blocked.push(url.href);
     return route.abort();
   });
@@ -282,7 +304,7 @@ const config = (page) => page.evaluate(() => fetch('/api/config').then(r => r.js
     assert(create.auth === 'Bearer pat-secret', `authentification PAT : ${create.auth}`);
     const storage = create.body.body.storage.value;
     for (const part of ['<h2>Résumé</h2><p>Lancement du projet validé.</p>', '<h2>Décisions</h2><ul><li>Budget de 120 k€ validé</li></ul>',
-      '<ac:task-status>incomplete</ac:task-status><ac:task-body>Envoyer le devis — 👤 Bob — 📅 vendredi 27 novembre 2026</ac:task-body>',
+      '<ac:task-status>incomplete</ac:task-status><ac:task-body>Envoyer le devis — responsable : Bob — échéance : vendredi 27 novembre 2026</ac:task-body>',
       '<h2>Points clés</h2>', '<ri:attachment ri:filename="Transcription - Point projet Alpha.txt" />',
       "<p><strong>[00:05] Bob :</strong> J'envoie le devis vendredi.</p>", 'ac:name="expand"']) {
       assert(storage.includes(part), `contenu de la page : « ${part} » absent`);
@@ -643,6 +665,64 @@ const config = (page) => page.evaluate(() => fetch('/api/config').then(r => r.js
     await context.close();
   });
 
+  await scenario('Confluence Data Center sur site : chemin /confluence, port 8090, base MySQL utf8, pièces jointes par POST', async () => {
+    const fake = new FakeConfluence({ dc: true });
+    // Analyse avec des emojis (titre, résumé, actions, tags) : refusés par la base MySQL utf8
+    const analysis = { ...SUMMARY, title: 'Point projet 🚀', summary: { ...SUMMARY.summary, executive: 'Lancement validé ✅🎉', tags: ['Projet Alpha 🚀', 'Budget'], action_items: [{ task: 'Envoyer le devis 📄', assignee: 'Bob', deadline: '2026-11-27' }] } };
+    const { context, page, blocked } = await openApp(browser, base, fake, { analysis, config: { ...CONFIG, confluence_url: DC_BASE } });
+    const id = await analyse(page);
+    await openPublish(page);
+    await chooseSpace(page, 'PROJ');
+    await pick(page, '100');
+    assert(await page.inputValue('#cfTitle') === 'Point projet 🚀', 'titre proposé');
+    const status = await publishAndWait(page);
+    assert(/Page créée/.test(status) && /jointe et vérifiée/.test(status), `publication refusée par Data Center : ${status}`);
+    const [create] = fake.calls(/^POST \/content$/);
+    assert(create.body.title === 'Point projet', `titre envoyé : ${create.body.title}`);
+    assert(!FOUR_BYTES.test(create.body.body.storage.value) && create.body.body.storage.value.includes('Lancement validé') && create.body.body.storage.value.includes('Envoyer le devis — responsable : Bob'), 'contenu de la page');
+    const pageId = String(fake.nextId - 1);
+    const link = `${DC_BASE}/pages/viewpage.action?pageId=${pageId}`;
+    assert(await page.getAttribute('#cfStatus a', 'href') === link && (await recording(page, id)).confluence_page.url === link, 'lien de la page (chemin /confluence et port conservés)');
+    assert(fake.log.every(c => c.host === 'intranet.corp.test:8090'), `hôtes appelés : ${[...new Set(fake.log.map(c => c.host))]}`);
+    assert(JSON.stringify(fake.labels[pageId]) === '["voxai","projet-alpha","budget"]', `étiquettes : ${JSON.stringify(fake.labels[pageId])}`);
+    // Pièce jointe : PUT refusé (405) → création par POST, puis contrôle
+    assert(fake.calls(/^PUT \/content\/\d+\/child\/attachment$/).length === 1 && fake.calls(new RegExp(`^POST /content/${pageId}/child/attachment$`)).length === 1 && fake.attachments[pageId].length === 1, 'repli d’envoi de la pièce jointe');
+    // Mise à jour d'une page existante (ajout à la fin), puis nouvelle version de la pièce jointe
+    await page.click('#cfCloseBtn');
+    await openPublish(page);
+    await chooseSpace(page, 'PROJ');
+    await expand(page, '100');
+    await pick(page, '101');
+    await page.check('input[name="cfAction"][value="update"]');
+    assert(/Page mise à jour/.test(await publishAndWait(page)) && fake.pages[101].version === 8 && fake.pages[101].body.startsWith('<p>Ancien contenu</p><hr />'), 'mise à jour sur Data Center');
+    assert(/jointe et vérifiée/.test(await publishAndWait(page)) && fake.attachments[101][0].versions === 2 && fake.calls(/^POST \/content\/101\/child\/attachment\/att1\/data$/).length === 1, 'nouvelle version de la pièce jointe');
+    assert(blocked.length === 0 && page.jsErrors.length === 0, `requêtes bloquées ${blocked} / erreurs ${page.jsErrors}`);
+    await context.close();
+  });
+
+  await scenario('Confluence Data Center sans jeton : identifiant + mot de passe', async () => {
+    const fake = new FakeConfluence({ dc: true });
+    const { context, page } = await openApp(browser, base, fake, { config: { ...CONFIG, confluence_url: DC_BASE, confluence_auth: 'basic', confluence_email: 'jdupont', confluence_token: 'motdepasse' } });
+    await page.evaluate(() => openSettingsModal());
+    await page.waitForTimeout(200);
+    assert((await page.textContent('#confluenceEmailRow')).includes('Identifiant Data Center') && await page.getAttribute('#confluenceEmail', 'type') === 'text', 'champ identifiant');
+    assert((await page.textContent('#confluenceTokenLabel')).startsWith('Mot de passe'), `libellé du secret : ${await page.textContent('#confluenceTokenLabel')}`);
+    await page.click('#confluenceTestBtn');
+    await page.waitForFunction(() => /✓|✗/.test(document.querySelector('#confluenceTestStatus').textContent));
+    assert(await page.textContent('#confluenceTestStatus') === '✓ Connecté en tant que Alice Martin', `test : ${await page.textContent('#confluenceTestStatus')}`);
+    assert(fake.log[0].auth === 'Basic ' + Buffer.from('jdupont:motdepasse').toString('base64'), 'en-tête Basic identifiant:mot de passe');
+    await page.fill('#confluenceToken', 'erreur');
+    await page.click('#confluenceTestBtn');
+    await page.waitForFunction(() => /✗/.test(document.querySelector('#confluenceTestStatus').textContent));
+    assert(/Accès refusé par Confluence \(HTTP 401\)/.test(await page.textContent('#confluenceTestStatus')), 'mot de passe erroné');
+    await page.click('#closeSettingsBtn');
+    await analyse(page);
+    await openPublish(page);
+    await chooseSpace(page, 'PROJ');
+    assert(/Page créée/.test(await publishAndWait(page)), 'publication avec identifiant + mot de passe');
+    await context.close();
+  });
+
   await scenario('Contenu de la page : suivi des actions, actions terminées, plusieurs fichiers, étiquettes', async () => {
     const fake = new FakeConfluence();
     const { context, page } = await openApp(browser, base, fake);
@@ -666,8 +746,8 @@ const config = (page) => page.evaluate(() => fetch('/api/config').then(r => r.js
       };
     });
     for (const part of ['12:34', '2 fichiers audio', '<li>Texte simple</li><li>Objet</li>',
-      '<ac:task-status>complete</ac:task-status><ac:task-body>Fait</ac:task-body>', 'Sans échéance — 👤 Chloé — 📅 À définir',
-      '<h2>Suivi des actions précédentes</h2><ul><li>🔄 En cours — Réserver la salle (👤 Alice) : pas encore</li><li>✅ Terminée — Devis</li></ul>',
+      '<ac:task-status>complete</ac:task-status><ac:task-body>Fait</ac:task-body>', 'Sans échéance — responsable : Chloé — échéance : À définir',
+      '<h2>Suivi des actions précédentes</h2><ul><li><ac:emoticon ac:name="information" /> En cours — Réserver la salle (Alice) : pas encore</li><li><ac:emoticon ac:name="tick" /> Terminée — Devis</li></ul>',
       '<li>Point objet</li>', '[Piste 2 • 01:02] Chloé :']) {
       assert(out.storage.includes(part), `contenu : « ${part} » absent`);
     }

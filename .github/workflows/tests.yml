@@ -8,7 +8,7 @@ name: Tests fonctionnels
 #  - series     : séries, suivi des actions, brief, échéances, e-mail aux participants
 #  - assistant  : assistant IA, e-mails, corrections de synthèse, transcription en direct
 #  - hors-ligne : application installable, utilisation sans réseau, mise à jour
-#  - confluence : publication dans Confluence
+#  - confluence : publication dans Confluence (Cloud et Data Center sur site)
 on:
   pull_request:
   push:

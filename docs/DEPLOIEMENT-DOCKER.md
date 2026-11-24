@@ -196,6 +196,17 @@ Si les serveurs restent sur un autre nom, autorisez l'origine de VoxAI dans leur
 
 Chaque utilisateur saisit son **jeton personnel** (PAT) dans l'assistant de démarrage ou dans ⚙️ Paramètres : les publications se font sous son identité.
 
+#### Confluence Data Center (sur site)
+
+| Point | Ce qu'il faut savoir |
+| :--- | :--- |
+| Adresse | Indiquez l'adresse complète, **avec le port et le chemin de contexte** s'il y en a : `CONFLUENCE_URL=https://intranet.entreprise.fr:8090/confluence`. Le relais conserve le chemin et transmet le port dans l'en-tête `Host`. |
+| Authentification | **Jeton d'accès personnel** (Data Center 7.9 et plus : *Profil → Jetons d'accès personnels*). Sans jeton (versions plus anciennes), choisissez *Identifiant + mot de passe* : l'identifiant Confluence, pas l'e-mail. Si l'authentification par mot de passe est désactivée sur votre instance (SSO), seul le jeton fonctionne. |
+| Certificat interne | Avec le relais, le conteneur joint Confluence sans vérifier le certificat (autorités internes acceptées). En accès direct, le certificat doit être reconnu par les postes. |
+| Base MySQL en `utf8` | Ces bases refusent les emojis (caractères sur 4 octets) : VoxAI n'en envoie aucun (titre, contenu, étiquettes), les icônes utilisent les émoticônes de Confluence. |
+| Pièces jointes | Les versions qui ne gèrent pas l'envoi par `PUT` sont prises en charge (repli automatique par `POST`, nouvelle version d'un fichier existant). Le relais accepte des fichiers jusqu'à 20 Mo. |
+| Contrôle XSRF | VoxAI envoie `X-Atlassian-Token: no-check` ; le relais retire `Origin`, `Referer` et les cookies. |
+
 ## 7. Vérifier le déploiement
 
 ```bash
