@@ -241,7 +241,16 @@ La liste des enregistrements se filtre par série ; un enregistrement se rattach
 
 Mesures en place, tests de sécurité automatisés (`npm run test:security`, `bash tests/security/docker.sh`) et risques résiduels : voir [SECURITE.md](SECURITE.md).
 
-Tests fonctionnels de la publication dans Confluence (faux serveur Confluence, aucun accès réseau) : `npm run test:e2e`. Ils couvrent la création et la mise à jour de pages, les pièces jointes, les erreurs, Confluence Cloud, le relais du conteneur, la navigation et « Publier et envoyer ».
+Tests de bout en bout (`tests/e2e/`, lancés par la CI à chaque modification) : `npm run test:e2e`, ou `node tests/e2e/run.js series` pour un seul fichier. Ils pilotent l'application dans Chromium comme un utilisateur, avec un micro simulé et des serveurs simulés (Gemini, LLM et Whisper de l'entreprise, Confluence), sans accès Internet :
+
+| Fichier | Parcours couverts |
+| :--- | :--- |
+| `dictaphone` | Micro (pause, reprise, annulation, refus), import de plusieurs pistes, synthèse et transcription (orateurs, recherche, actions), copies et exports, téléchargement de l'audio, sauvegarde / restauration |
+| `sur-site` | Assistant de démarrage, réglages de l'administrateur (« sans cloud »), paramètres (détection des modèles, test, enregistrement), mode Hybride, serveurs en panne |
+| `series` | Séries (saisie, rattachement, filtre, modification, suppression), suivi des actions d'une réunion à l'autre, brief, échéances, e-mail aux participants |
+| `assistant` | Assistant d'un enregistrement et assistant global, e-mails rédigés par l'IA, corrections de synthèse (appliquer, annuler, ignorer), transcription en direct |
+| `hors-ligne` | Application installable, ouverture et dictaphone sans réseau, analyses en attente, mise à jour sans rechargement forcé |
+| `confluence` | Création et mise à jour de pages, pièces jointes, erreurs, Confluence Cloud, relais du conteneur, navigation, « Publier et envoyer » |
 
 ## 📁 Structure du Projet
 

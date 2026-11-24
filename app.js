@@ -790,12 +790,13 @@ async function loadRecordings() {
 }
 
 function renderRecordingsList() {
-  const query = elements.searchRecordings.value.toLowerCase().trim();
+  const query = elements.searchRecordings.value.trim();
+  const folded = foldWithMap(query).folded; // sans accents ni majuscules, comme dans la transcription
   const list = elements.recordingsList;
   list.innerHTML = '';
 
   const filtered = state.recordings.filter(r => {
-    return r.title.toLowerCase().includes(query) && (!window.VoxSeries || VoxSeries.matchesFilter(r));
+    return foldWithMap(r.title || '').folded.includes(folded) && (!window.VoxSeries || VoxSeries.matchesFilter(r));
   });
 
   if (filtered.length === 0) {
@@ -1458,7 +1459,7 @@ function buildProposalCard(proposal) {
 // Assistant global : disponible partout, sur l'ensemble des réunions
 // ==============================================================================
 
-const assistant = { open: false, loaded: false, busy: false };
+const assistant = { open: false, loaded: false, busy: false, loading: null };
 
 function assistantEls() {
   return {
@@ -1495,7 +1496,7 @@ function toggleAssistant(force) {
   document.getElementById('assistantToggleBtn').setAttribute('aria-expanded', String(assistant.open));
   if (assistant.open) {
     updateAssistantContext();
-    if (!assistant.loaded) loadAssistantHistory();
+    if (!assistant.loaded && !assistant.loading) assistant.loading = loadAssistantHistory().finally(() => { assistant.loading = null; });
     setTimeout(() => input.focus(), 50);
   }
 }
@@ -1507,6 +1508,8 @@ async function sendAssistantMessage(e) {
   if (!msg || assistant.busy) return;
   input.value = '';
   assistant.busy = true;
+  // Historique en cours de chargement : l'attendre, sinon il effacerait la question affichée
+  if (assistant.loading) await assistant.loading.catch(() => {});
   appendChatMessage('user', msg, messages);
   const loading = document.createElement('div');
   loading.className = 'p-3 rounded-xl text-xs mr-auto bg-slate-800/70 text-slate-400 border border-slate-700/60 animate-pulse';
