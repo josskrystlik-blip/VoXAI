@@ -511,7 +511,7 @@
     $('seriesCloseBtn').addEventListener('click', () => modal(false));
     $('seriesModal').addEventListener('click', (e) => { if (e.target.id === 'seriesModal') modal(false); });
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && !$('seriesModal').classList.contains('hidden') && $('confluenceModal').classList.contains('hidden')) modal(false);
+      if (e.key === 'Escape' && !e.defaultPrevented && !$('seriesModal').classList.contains('hidden') && $('confluenceModal').classList.contains('hidden')) modal(false);
     });
     $('seriesNewBtn').addEventListener('click', () => edit(null));
     $('seriesList').addEventListener('click', (e) => {
