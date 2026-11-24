@@ -185,7 +185,7 @@ Un contrôle automatique sur chaque pull request vérifie que `vendor/` est à j
 
 Chaque enregistrement analysé peut être publié en compte rendu dans Confluence (bouton **📘 Confluence**) :
 
-1. **⚙️ Paramètres → Publication Confluence** : URL de Confluence et **jeton d'accès personnel (PAT)** (*Profil → Jetons d'accès personnels* sur Confluence Server / Data Center). Pour Confluence Cloud, choisissez *E-mail + jeton d'API*.
+1. **⚙️ Paramètres → Publication Confluence** : URL de Confluence et **jeton d'accès personnel (PAT)** (*Profil → Jetons d'accès personnels* sur Confluence Server / Data Center). Sur un Data Center sans jeton (avant 7.9), choisissez *Identifiant + mot de passe* ; pour Confluence Cloud, *E-mail + jeton d'API*. Data Center sur site (port, chemin `/confluence`, base MySQL, certificats internes) : voir [le guide de déploiement](docs/DEPLOIEMENT-DOCKER.md#63-confluence).
 2. Dans la fenêtre de publication : choisissez l'**espace**, parcourez l'**arborescence** (ou recherchez une page par titre), puis
    - **Créer une page** sous l'emplacement sélectionné, ou
    - **Mettre à jour la page** sélectionnée (ajout à la fin ou remplacement du contenu).
@@ -250,7 +250,7 @@ Tests de bout en bout (`tests/e2e/`, lancés par la CI à chaque modification) :
 | `series` | Séries (saisie, rattachement, filtre, modification, suppression), suivi des actions d'une réunion à l'autre, brief, échéances, e-mail aux participants |
 | `assistant` | Assistant d'un enregistrement et assistant global, e-mails rédigés par l'IA, corrections de synthèse (appliquer, annuler, ignorer), transcription en direct |
 | `hors-ligne` | Application installable, ouverture et dictaphone sans réseau, analyses en attente, mise à jour sans rechargement forcé |
-| `confluence` | Création et mise à jour de pages, pièces jointes, erreurs, Confluence Cloud, relais du conteneur, navigation, « Publier et envoyer » |
+| `confluence` | Création et mise à jour de pages, pièces jointes, erreurs, Confluence Cloud et Data Center sur site (port, chemin /confluence, base MySQL utf8, identifiant + mot de passe), relais du conteneur, navigation, « Publier et envoyer » |
 
 ## 📁 Structure du Projet
 

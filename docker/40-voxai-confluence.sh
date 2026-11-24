@@ -15,6 +15,8 @@ if [ -n "${CONFLUENCE_URL:-}" ]; then
     exit 1
   fi
   UPSTREAM_HOST=$(echo "$TARGET" | sed -E 's#^https?://([^/:]+).*#\1#')
+  # En-tête Host avec le port s'il est indiqué (Data Center écoute souvent sur 8090)
+  UPSTREAM_HOSTPORT=$(echo "$TARGET" | sed -E 's#^https?://([^/]+).*#\1#')
   cat > "$OUT" <<CONF
 location = /confluence-proxy.json {
     default_type application/json;
@@ -24,7 +26,7 @@ location = /confluence-proxy.json {
 location /confluence/ {
     proxy_pass $TARGET/;
     proxy_http_version 1.1;
-    proxy_set_header Host $UPSTREAM_HOST;
+    proxy_set_header Host $UPSTREAM_HOSTPORT;
     # Confluence ne doit voir ni l'origine du navigateur (contrôle XSRF) ni ses cookies
     proxy_set_header Origin "";
     proxy_set_header Referer "";

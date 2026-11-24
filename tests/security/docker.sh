@@ -10,6 +10,7 @@ IMAGE="${VOXAI_TEST_IMAGE:-voxai:securite}"
 PORT_APP=18080
 PORT_PROXY=18081
 PORT_UPSTREAM=18090
+PORT_PROXY_DC=18084
 PASS=0
 FAIL=0
 CONTAINERS=()
@@ -116,8 +117,11 @@ import json, sys
 from http.server import HTTPServer, BaseHTTPRequestHandler
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
-    def do_GET(self):
-        body = json.dumps({"path": self.path, "headers": {k.lower(): v for k, v in self.headers.items()}}).encode()
+    def do_POST(self):
+        self.do_GET(int(self.headers.get("Content-Length", 0)))
+    def do_GET(self, size=0):
+        received = len(self.rfile.read(size)) if size else 0
+        body = json.dumps({"path": self.path, "method": self.command, "received": received, "headers": {k.lower(): v for k, v in self.headers.items()}}).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Set-Cookie", "JSESSIONID=secret; Path=/")
@@ -140,6 +144,19 @@ if run vx-sec-proxy "$PORT_PROXY" -e "CONFLUENCE_URL=http://host.docker.internal
   check "Proxy : pas de sortie vers le système de fichiers" '! grep -q "root:" <<<"$R2"'
 else
   ko "Proxy Confluence : le conteneur ne démarre pas"
+fi
+
+# Confluence Data Center : adresse avec port et chemin de contexte (https://hote:8090/confluence)
+if run vx-sec-proxy-dc "$PORT_PROXY_DC" -e "CONFLUENCE_URL=http://host.docker.internal:$PORT_UPSTREAM/confluence"; then
+  R="$(curl -s -H 'Authorization: Bearer pat-test' "http://127.0.0.1:$PORT_PROXY_DC/confluence/rest/api/space?limit=100&start=0")"
+  check "Data Center : chemin /confluence conservé"   '[ "$(python3 -c "import json,sys; print(json.loads(sys.argv[1])[\"path\"])" "$R")" = "/confluence/rest/api/space?limit=100&start=0" ]'
+  check "Data Center : en-tête Host avec le port"     '[ "$(python3 -c "import json,sys; print(json.loads(sys.argv[1])[\"headers\"][\"host\"])" "$R")" = "host.docker.internal:$PORT_UPSTREAM" ]'
+  head -c 5000000 /dev/urandom > /tmp/voxai-piece-jointe.bin
+  R="$(curl -s -H 'Authorization: Bearer pat-test' -H 'X-Atlassian-Token: no-check' -F "file=@/tmp/voxai-piece-jointe.bin;filename=Transcription.txt" "http://127.0.0.1:$PORT_PROXY_DC/confluence/rest/api/content/123/child/attachment")"
+  check "Data Center : pièce jointe de 5 Mo relayée"   '[ "$(python3 -c "import json,sys; print(json.loads(sys.argv[1])[\"received\"] > 5000000)" "$R")" = "True" ]'
+  check "Data Center : jeton anti-XSRF transmis"      '[ "$(python3 -c "import json,sys; print(json.loads(sys.argv[1])[\"headers\"].get(\"x-atlassian-token\", \"\"))" "$R")" = "no-check" ]'
+else
+  ko "Proxy Confluence Data Center : le conteneur ne démarre pas"
 fi
 
 echo

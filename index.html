@@ -745,12 +745,12 @@
               <label class="block text-xs font-semibold text-slate-300 mb-1.5">Authentification</label>
               <select id="confluenceAuth" class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-sky-500">
                 <option value="pat">Jeton personnel (PAT) — Server / Data Center</option>
-                <option value="basic">E-mail + jeton d'API — Confluence Cloud</option>
+                <option value="basic">Identifiant + mot de passe — Data Center sans jeton (avant 7.9) · E-mail + jeton d'API — Cloud</option>
               </select>
             </div>
             <div id="confluenceEmailRow" class="hidden">
-              <label class="block text-xs font-semibold text-slate-300 mb-1.5">E-mail Atlassian</label>
-              <input type="email" id="confluenceEmail" autocomplete="off" placeholder="prenom.nom@entreprise.fr" class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-sky-500">
+              <label class="block text-xs font-semibold text-slate-300 mb-1.5">Identifiant Data Center ou e-mail Atlassian (Cloud)</label>
+              <input type="text" id="confluenceEmail" autocomplete="off" placeholder="jdupont ou prenom.nom@entreprise.fr" class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-sky-500">
             </div>
           </div>
           <div>
@@ -1079,8 +1079,8 @@
           <div><label class="block text-xs font-semibold text-slate-300 mb-1.5" for="wzCfUrl">URL de Confluence</label><input id="wzCfUrl" class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-indigo-500" placeholder="https://confluence.entreprise.fr"></div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div><label class="block text-xs font-semibold text-slate-300 mb-1.5" for="wzCfAuth">Authentification</label>
-              <select id="wzCfAuth" class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-indigo-500"><option value="pat">Jeton personnel (PAT) — Server / Data Center</option><option value="basic">E-mail + jeton d’API — Cloud</option></select></div>
-            <div id="wzCfEmailRow" class="hidden"><label class="block text-xs font-semibold text-slate-300 mb-1.5" for="wzCfEmail">E-mail Atlassian</label><input id="wzCfEmail" class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-indigo-500"></div>
+              <select id="wzCfAuth" class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-indigo-500"><option value="pat">Jeton personnel (PAT) — Server / Data Center</option><option value="basic">Identifiant + mot de passe (Data Center sans jeton) · E-mail + jeton d’API (Cloud)</option></select></div>
+            <div id="wzCfEmailRow" class="hidden"><label class="block text-xs font-semibold text-slate-300 mb-1.5" for="wzCfEmail">Identifiant Data Center ou e-mail Atlassian (Cloud)</label><input id="wzCfEmail" class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-indigo-500"></div>
           </div>
           <div><label class="block text-xs font-semibold text-slate-300 mb-1.5" for="wzCfToken">Jeton</label><input id="wzCfToken" type="password" autocomplete="off" class="w-full bg-slate-900/80 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-indigo-500"></div>
           <div class="flex items-center gap-3">

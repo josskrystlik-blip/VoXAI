@@ -130,7 +130,7 @@
     async createPage(cfg, { spaceKey, parentId, title, storage }) {
       return request(cfg, 'POST', '/content', {
         type: 'page',
-        title,
+        title: bmp(title).trim(),
         space: { key: spaceKey },
         ...(parentId ? { ancestors: [{ id: parentId }] } : {}),
         body: { storage: { value: storage, representation: 'storage' } }
@@ -144,7 +144,7 @@
       return request(cfg, 'PUT', `/content/${enc(id)}`, {
         id,
         type: 'page',
-        title: title || current.title,
+        title: bmp(title || current.title).trim(),
         space: { key: current.space.key },
         version: { number: current.version.number + 1, message: 'Compte rendu publié par VoxAI' },
         body: { storage: { value, representation: 'storage' } }
@@ -193,10 +193,20 @@
   // Mise en forme du compte rendu (format de stockage Confluence)
   // ============================================================================
 
+  /**
+   * Caractères sur 4 octets (emojis…) retirés : les bases MySQL des installations Data Center
+   * configurées en utf8 (configuration longtemps recommandée par Atlassian) les refusent et la
+   * page ne serait pas créée (« Incorrect string value »).
+   */
+  const bmp = (str) => String(str ?? '').replace(/[\u{10000}-\u{10FFFF}]/gu, '').replace(/\uFE0F/g, '').replace(/ {2,}/g, ' ').trim();
+
   function x(str) {
-    return String(str ?? '')
+    return bmp(str)
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
+
+  /** Émoticônes Confluence (macro native, affichée partout) plutôt que des emojis. */
+  const icon = (name) => `<ac:emoticon ac:name="${name}" />`;
 
   function transcriptFileName(rec) {
     return `Transcription - ${safeFileName(rec.title, 'Enregistrement')}.txt`;
@@ -235,7 +245,7 @@
     const actions = s.action_items || [];
     if (actions.length) {
       h += `<h2>Plan d'action</h2><ac:task-list>${actions.map(a => {
-        const meta = [a.assignee ? `👤 ${x(a.assignee)}` : '', a.deadline ? `📅 ${x(deadlineInfo(a.deadline).long)}` : ''].filter(Boolean).join(' — ');
+        const meta = [a.assignee ? `responsable : ${x(a.assignee)}` : '', a.deadline ? `échéance : ${x(deadlineInfo(a.deadline).long)}` : ''].filter(Boolean).join(' — ');
         return `<ac:task><ac:task-status>${a.status === 'done' ? 'complete' : 'incomplete'}</ac:task-status><ac:task-body>${x(a.task)}${meta ? ` — ${meta}` : ''}</ac:task-body></ac:task>`;
       }).join('')}</ac:task-list>`;
     }
@@ -244,7 +254,7 @@
     const followup = (s.action_followup || []).filter(f => f && f.task);
     if (followup.length) {
       h += `<h2>Suivi des actions précédentes</h2><ul>${followup.map(f =>
-        `<li>${f.status === 'done' ? '✅ Terminée' : '🔄 En cours'} — ${x(f.task)}${f.assignee ? ` (👤 ${x(f.assignee)})` : ''}${f.note ? ` : ${x(f.note)}` : ''}</li>`).join('')}</ul>`;
+        `<li>${f.status === 'done' ? `${icon('tick')} Terminée` : `${icon('information')} En cours`} — ${x(f.task)}${f.assignee ? ` (${x(f.assignee)})` : ''}${f.note ? ` : ${x(f.note)}` : ''}</li>`).join('')}</ul>`;
     }
 
     const keyPoints = s.key_points || [];
@@ -252,7 +262,7 @@
 
     const transcription = Array.isArray(rec.transcription) ? rec.transcription : [];
     if (attachTranscript && transcription.length) {
-      h += `<p>📎 Transcription intégrale en pièce jointe : <ac:link><ri:attachment ri:filename="${x(transcriptFileName(rec))}" /></ac:link></p>`;
+      h += `<p>Transcription intégrale en pièce jointe : <ac:link><ri:attachment ri:filename="${x(transcriptFileName(rec))}" /></ac:link></p>`;
     }
     if (includeTranscript && transcription.length) {
       const lines = transcription.map(t => {
@@ -264,7 +274,9 @@
     return h;
   }
 
-  const toLabel = t => String(t).toLowerCase().normalize('NFC').replace(/\s+/g, '-').replace(/[^\p{L}\p{N}_-]/gu, '');
+  // Étiquette Confluence : minuscules, lettres et chiffres (accents compris), tirets ; ni emoji ni ponctuation
+  const toLabel = t => String(t).toLowerCase().normalize('NFC').replace(/[^\p{L}\p{N}_\s-]/gu, '').trim()
+    .replace(/\s+/g, '-').replace(/-{2,}/g, '-').replace(/^-+|-+$/g, '');
 
   function labelsFor(rec, series) {
     const tags = (rec.summary && rec.summary.tags) || [];
@@ -291,7 +303,7 @@
   function updateAuthUI() {
     $('confluenceEmailRow').classList.toggle('hidden', $('confluenceAuth').value !== 'basic');
     $('confluenceTokenLabel').textContent = $('confluenceAuth').value === 'basic'
-      ? "Jeton d'API Atlassian" : "Jeton d'accès personnel (PAT)";
+      ? "Mot de passe (Data Center) ou jeton d'API (Cloud)" : "Jeton d'accès personnel (PAT)";
   }
 
   async function fillSettings(cfg) {
