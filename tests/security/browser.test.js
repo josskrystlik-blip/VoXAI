@@ -421,6 +421,30 @@ function maliciousBackup() {
     await context.close();
   });
 
+  await scenario('Clé du LLM jamais envoyée à un autre serveur (Whisper)', async () => {
+    const cors = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' };
+    const auth = { llm: [], whisper: [] };
+    const record = (who, route) => { if (route.request().method() !== 'OPTIONS') auth[who].push(route.request().headers().authorization || ''); };
+    const { context, page } = await openApp(browser, base, {
+      servers: {
+        'llm.corp.test': (route) => { record('llm', route); return route.fulfill({ headers: cors, contentType: 'application/json', body: JSON.stringify({ choices: [{ message: { content: 'pong' } }] }) }); },
+        // Serveur Whisper au CORS minimal (pas d'Access-Control-Allow-Headers) : doit fonctionner sans clé
+        'whisper.corp.test': (route) => route.request().method() === 'OPTIONS'
+          ? route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*' } })
+          : (record('whisper', route), route.fulfill({ headers: { 'access-control-allow-origin': '*' }, contentType: 'application/json', body: '{"text":""}' }))
+      }
+    });
+    const test = (cfg) => page.evaluate(c => fetch('/api/test-connection', { method: 'POST', body: JSON.stringify(c) }).then(r => r.json()), cfg);
+    const cfg = { provider: 'local', local_stt_mode: 'local', local_llm_url: 'https://llm.corp.test/v1', local_llm_model: 'm', local_llm_api_key: 'cle-llm-secrete', on_prem_stt_url: 'https://whisper.corp.test/v1' };
+    const r = await test(cfg);
+    assert(r.success, `test de connexion en échec : ${r.message}`);
+    assert(auth.whisper.length === 1 && !auth.whisper.some(h => h.includes('cle-llm-secrete')), `clé du LLM envoyée au serveur Whisper : ${JSON.stringify(auth.whisper)}`);
+    // Même serveur pour le LLM et Whisper : la clé du LLM est réutilisée
+    await test({ ...cfg, on_prem_stt_url: 'https://llm.corp.test/v1' });
+    assert(auth.llm.filter(h => h === 'Bearer cle-llm-secrete').length === 3, `clé non réutilisée sur le même serveur : ${JSON.stringify(auth.llm)}`);
+    await context.close();
+  });
+
   await scenario('E-mail .eml : pas d’injection d’en-tête par l’objet', async () => {
     const { context, page } = await openApp(browser, base);
     const eml = await page.evaluate(() => buildEml({ subject: 'CR\r\nBcc: espion@exemple.com\r\nX-Evil: 1', body: 'Bonjour\r\n\r\n--fin' }));

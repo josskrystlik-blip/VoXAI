@@ -285,6 +285,17 @@
     return { base: url, v1, chat: `${v1}/chat/completions`, model: cfg.local_llm_model || cfg.on_prem_llm_model || 'llama3.2' };
   }
 
+  /** Clé du serveur Whisper : la sienne, ou celle du LLM uniquement s'il s'agit du même serveur
+   *  (jamais envoyer la clé du LLM à un autre serveur ; un en-tête Authorization inutile
+   *  déclenche aussi une pré-vérification CORS que beaucoup de serveurs Whisper refusent). */
+  function sttApiKey(cfg, sttUrl) {
+    const own = (cfg.on_prem_stt_api_key || '').trim();
+    if (own) return own;
+    try {
+      return new URL(sttUrl).origin === new URL(localChatUrl(cfg).base).origin ? (cfg.local_llm_api_key || '') : '';
+    } catch { return ''; }
+  }
+
   function authHeaders(key) {
     key = (key || '').trim();
     return key ? { Authorization: `Bearer ${key}` } : {};
@@ -556,8 +567,7 @@ Chaque ligne de la transcription commence par son numéro (#1, #2...). ${REFS_RU
         file_name: audioFiles[i].name,
         speaker: `Orateur (Piste ${i + 1})`,
         timestamp: '00:00',
-        text: await transcribeWhisperLocal(audioFiles[i], sttUrl, cfg.on_prem_stt_model,
-          cfg.on_prem_stt_api_key || cfg.local_llm_api_key)
+        text: await transcribeWhisperLocal(audioFiles[i], sttUrl, cfg.on_prem_stt_model, sttApiKey(cfg, sttUrl))
       });
     }
     return summarizeWithLocalLLM(transcription, audioFiles, cfg, ctx);
@@ -882,6 +892,12 @@ ${EDIT_RULE}`;
     return `${err.message}. Si le serveur local est bien démarré, autorisez cette page dans sa configuration CORS (ex. Ollama : OLLAMA_ORIGINS="${origin}").`;
   }
 
+  function whisperHint(err, withKey) {
+    if (!/failed to fetch|networkerror|load failed/i.test(err.message)) return err.message;
+    return `${err.message}. Vérifiez que le serveur Whisper est démarré et qu'il renvoie l'en-tête Access-Control-Allow-Origin pour ${location.origin}` +
+      (withKey ? ` et accepte l'en-tête Authorization dans sa réponse OPTIONS (Access-Control-Allow-Headers), car une clé d'API est envoyée.` : '.');
+  }
+
   async function testConnection(cfg) {
     if (cfg.provider === 'gemini') {
       if (!(cfg.gemini_api_key || '').trim()) return { success: false, message: "La clé d'API Gemini n'est pas renseignée." };
@@ -928,11 +944,10 @@ ${EDIT_RULE}`;
     v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); ascii(36, 'data'); v.setUint32(40, samples * 2, true);
     const t0 = performance.now();
     try {
-      await transcribeWhisperLocal({ blob: new Blob([buf], { type: 'audio/wav' }), filename: 'test.wav' }, url, model,
-        cfg.on_prem_stt_api_key || cfg.local_llm_api_key);
+      await transcribeWhisperLocal({ blob: new Blob([buf], { type: 'audio/wav' }), filename: 'test.wav' }, url, model, sttApiKey(cfg, url));
       return { ok: true, model, ms: Math.round(performance.now() - t0) };
     } catch (err) {
-      return { ok: false, error: `${url} : ${corsHint(err)}` };
+      return { ok: false, error: `${url} : ${whisperHint(err, !!sttApiKey(cfg, url))}` };
     }
   }
 

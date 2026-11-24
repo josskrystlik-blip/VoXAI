@@ -138,7 +138,7 @@ Même sans politique imposée, VoxAI est **100 % sur site par défaut** dès que
 | `VOXAI_STT_MODE` | `local` (Whisper, par défaut) ou `cloud` (Hybride) | `local` |
 | `VOXAI_STT_URL` | URL du serveur Whisper (avec `/v1`) | `https://whisper.entreprise.fr/v1` |
 | `VOXAI_STT_MODEL` | Modèle Whisper | `whisper-large-v3` |
-| `VOXAI_STT_API_KEY` | Clé du serveur Whisper (sinon celle du LLM) | |
+| `VOXAI_STT_API_KEY` | Clé du serveur Whisper (sinon celle du LLM, uniquement si c'est le même serveur) | |
 | `VOXAI_LANGUAGE` | Langue des réunions | `fr` |
 | `VOXAI_CONFLUENCE_URL` | URL Confluence préremplie, appelée directement par le navigateur (CORS requis) | `https://confluence.entreprise.fr` |
 | `CONFLUENCE_URL` | Active le **relais** `/confluence/` vers cette instance (pas de CORS, voir §6.3) | `https://confluence.entreprise.fr` |
