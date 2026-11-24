@@ -616,7 +616,8 @@
     $('cfCloseBtn').addEventListener('click', close);
     $('cfCancelBtn').addEventListener('click', close);
     $('confluenceModal').addEventListener('click', (e) => { if (e.target.id === 'confluenceModal') close(); });
-    window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('confluenceModal').classList.contains('hidden')) close(); });
+    // Échap ne ferme que cette fenêtre (pas la fiche de série ouverte dessous) : événement marqué traité
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('confluenceModal').classList.contains('hidden')) { e.preventDefault(); close(); } });
     $('cfOpenSettingsBtn').addEventListener('click', () => { modal(false); openSettingsModal(); $('confluenceSettings').scrollIntoView({ block: 'start' }); });
 
     $('cfSpaceFilter').addEventListener('input', (e) => renderSpaces(e.target.value));

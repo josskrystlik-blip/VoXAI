@@ -1,0 +1,29 @@
+name: Tests fonctionnels
+
+# Parcours utilisateur dans le navigateur (voir tests/e2e/), avec des serveurs simulés :
+#  - confluence : création et mise à jour de pages, pièces jointes, erreurs, Confluence Cloud,
+#                 relais du conteneur, navigation et recherche, page de série, « Publier et envoyer »
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  confluence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Installer Playwright (Chromium)
+        run: |
+          npm install --no-save --no-audit --no-fund playwright@1.63.0
+          npx playwright install --with-deps chromium
+      - run: node tests/e2e/confluence.test.js

@@ -241,6 +241,8 @@ La liste des enregistrements se filtre par série ; un enregistrement se rattach
 
 Mesures en place, tests de sécurité automatisés (`npm run test:security`, `bash tests/security/docker.sh`) et risques résiduels : voir [SECURITE.md](SECURITE.md).
 
+Tests fonctionnels de la publication dans Confluence (faux serveur Confluence, aucun accès réseau) : `npm run test:e2e`. Ils couvrent la création et la mise à jour de pages, les pièces jointes, les erreurs, Confluence Cloud, le relais du conteneur, la navigation et « Publier et envoyer ».
+
 ## 📁 Structure du Projet
 
 ```text
