@@ -21,54 +21,15 @@
  */
 'use strict';
 
-const http = require('http');
 const fs = require('fs');
-const path = require('path');
-const { chromium } = require('playwright');
+const { AUDIO, CORS, startServer, createRunner, assert, launchBrowser } = require('./lib');
 
-const ROOT = path.resolve(__dirname, '../..');
-const AUDIO = path.join(ROOT, 'tests', 'security', 'fixtures', 'silence.wav');
 const CF_HOST = 'confluence.test';
 const CF_BASE = `https://${CF_HOST}/wiki`;
 
 // ---------------------------------------------------------------------------
-// Infrastructure : serveur statique local + mini-cadre de test
-// ---------------------------------------------------------------------------
-
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript', '.css': 'text/css', '.woff2': 'font/woff2', '.json': 'application/json', '.wav': 'audio/wav' };
-
-function startServer(extraRoutes = {}) {
-  return new Promise(resolve => {
-    const server = http.createServer((req, res) => {
-      const url = decodeURIComponent(req.url.split('?')[0]);
-      if (extraRoutes[url]) { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(extraRoutes[url]); }
-      const file = path.join(ROOT, url === '/' ? 'index.html' : url);
-      if (!file.startsWith(ROOT) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); return res.end(); }
-      res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' });
-      fs.createReadStream(file).pipe(res);
-    });
-    server.listen(0, '127.0.0.1', () => resolve(server));
-  });
-}
-
-const results = [];
-async function scenario(name, fn) {
-  try {
-    await fn();
-    results.push({ name, ok: true });
-    console.log(`  ✓ ${name}`);
-  } catch (err) {
-    results.push({ name, ok: false, err });
-    console.log(`  ✗ ${name}\n      ${String(err && err.stack || err).split('\n').slice(0, 3).join('\n      ')}`);
-  }
-}
-function assert(cond, msg) { if (!cond) throw new Error(msg); }
-
-// ---------------------------------------------------------------------------
 // Faux serveur Confluence (état + journal des requêtes)
 // ---------------------------------------------------------------------------
-
-const CORS = { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' };
 
 /** Extrait le fichier d'un envoi multipart (nom et taille en octets). */
 function multipartFile(req) {
@@ -297,8 +258,8 @@ const config = (page) => page.evaluate(() => fetch('/api/config').then(r => r.js
   const serverProxy = await startServer({ '/confluence-proxy.json': JSON.stringify({ enabled: true }) });
   const base = `http://127.0.0.1:${server.address().port}/`;
   const baseProxy = `http://127.0.0.1:${serverProxy.address().port}/`;
-  const browser = await chromium.launch();
-  console.log('Tests fonctionnels Confluence (navigateur)');
+  const browser = await launchBrowser();
+  const { scenario, finish } = createRunner('Tests de bout en bout : publication dans Confluence');
 
   await scenario('Création d’une sous-page : emplacement, contenu, étiquettes, pièce jointe vérifiée, lien enregistré', async () => {
     const fake = new FakeConfluence();
@@ -719,8 +680,5 @@ const config = (page) => page.evaluate(() => fetch('/api/config').then(r => r.js
   await browser.close();
   server.close();
   serverProxy.close();
-
-  const failed = results.filter(r => !r.ok);
-  console.log(`\n${results.length - failed.length}/${results.length} scénarios réussis`);
-  process.exit(failed.length ? 1 : 0);
+  finish();
 })().catch(err => { console.error(err); process.exit(1); });

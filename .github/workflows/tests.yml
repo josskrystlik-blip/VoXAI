@@ -1,8 +1,14 @@
 name: Tests fonctionnels
 
-# Parcours utilisateur dans le navigateur (voir tests/e2e/), avec des serveurs simulés :
-#  - confluence : création et mise à jour de pages, pièces jointes, erreurs, Confluence Cloud,
-#                 relais du conteneur, navigation et recherche, page de série, « Publier et envoyer »
+# Parcours utilisateur de bout en bout dans le navigateur (voir tests/e2e/), avec des serveurs
+# simulés (Gemini, LLM et Whisper de l'entreprise, Confluence), un micro simulé et sans Internet :
+#  - dictaphone : micro (pause, reprise, annulation, refus), import multi-pistes, synthèse,
+#                 transcription, copies et exports, sauvegarde / restauration
+#  - sur-site   : assistant de démarrage, réglages de l'administrateur, paramètres, Hybride, pannes
+#  - series     : séries, suivi des actions, brief, échéances, e-mail aux participants
+#  - assistant  : assistant IA, e-mails, corrections de synthèse, transcription en direct
+#  - hors-ligne : application installable, utilisation sans réseau, mise à jour
+#  - confluence : publication dans Confluence
 on:
   pull_request:
   push:
@@ -13,8 +19,13 @@ permissions:
   contents: read
 
 jobs:
-  confluence:
+  e2e:
+    name: ${{ matrix.suite }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [dictaphone, sur-site, series, assistant, hors-ligne, confluence]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -26,4 +37,4 @@ jobs:
         run: |
           npm install --no-save --no-audit --no-fund playwright@1.63.0
           npx playwright install --with-deps chromium
-      - run: node tests/e2e/confluence.test.js
+      - run: node tests/e2e/${{ matrix.suite }}.test.js

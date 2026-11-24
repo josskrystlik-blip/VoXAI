@@ -9,7 +9,7 @@
     "build": "npm run build:fonts && npm run build:css",
     "test:security": "bash tests/security/static.sh && node tests/security/browser.test.js",
     "test:security:docker": "bash tests/security/docker.sh",
-    "test:e2e": "node tests/e2e/confluence.test.js"
+    "test:e2e": "node tests/e2e/run.js"
   },
   "devDependencies": {
     "@fontsource-variable/jetbrains-mono": "5.2.5",
