@@ -812,11 +812,12 @@
       </div>
       <div id="versionsList" class="overflow-y-auto p-6 space-y-5">
         <section class="version-entry">
-          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.12.1</span> — Correction : connexion au serveur Whisper local <span class="ml-1.5 px-1.5 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 text-[10px] font-semibold align-middle">Version actuelle</span></h4>
+          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.12.1</span> — Corrections : serveur Whisper local et e-mails longs <span class="ml-1.5 px-1.5 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 text-[10px] font-semibold align-middle">Version actuelle</span></h4>
           <p class="text-[11px] text-slate-500 mb-1.5">24 novembre 2026</p>
           <ul class="list-disc pl-5 space-y-1 text-xs text-slate-300">
             <li>Sans clé Whisper renseignée, la clé du LLM n’est plus envoyée au serveur Whisper (sauf s’il s’agit du même serveur) : les serveurs Whisper au CORS minimal fonctionnent à nouveau et la clé ne part plus vers un autre serveur.</li>
             <li>Message d’erreur Whisper précis : en-têtes CORS à autoriser sur le serveur.</li>
+            <li>E-mail aux participants via la messagerie par défaut : un compte rendu long (par exemple enrichi par l’assistant) ne crée plus de message vide ; le corps est copié avant l’ouverture de la messagerie et le message indique de le coller.</li>
           </ul>
         </section>
         <section class="version-entry">

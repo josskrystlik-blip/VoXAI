@@ -445,6 +445,25 @@ function maliciousBackup() {
     await context.close();
   });
 
+  await scenario('E-mail long via la messagerie par défaut : jamais de message vide', async () => {
+    const { context, page } = await openApp(browser, base);
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    const res = await page.evaluate(async () => {
+      const steps = [];
+      const write = navigator.clipboard.write.bind(navigator.clipboard);
+      navigator.clipboard.write = (items) => { steps.push('copie'); return write(items); };
+      window.launchMailto = (url) => steps.push('ouverture:' + url);
+      const body = 'Bonjour à tous,\n\n' + 'Compte rendu détaillé enrichi par l’assistant. '.repeat(60);
+      await openInMailClient({ subject: 'CR', body, to: ['alice@corp.fr'] }, 'mailto');
+      return { steps, clip: await navigator.clipboard.readText() };
+    });
+    const open = res.steps.findIndex(s => s.startsWith('ouverture:'));
+    assert(res.steps[0] === 'copie' && open === 1, `le corps doit être copié AVANT d'ouvrir la messagerie : ${res.steps.map(s => s.slice(0, 20)).join(' → ')}`);
+    assert(/body=.+/.test(res.steps[open]), 'lien mailto sans corps : la messagerie ouvrirait un message vide');
+    assert(res.clip.startsWith('Bonjour à tous'), 'corps absent du presse-papiers');
+    await context.close();
+  });
+
   await scenario('E-mail .eml : pas d’injection d’en-tête par l’objet', async () => {
     const { context, page } = await openApp(browser, base);
     const eml = await page.evaluate(() => buildEml({ subject: 'CR\r\nBcc: espion@exemple.com\r\nX-Evil: 1', body: 'Bonjour\r\n\r\n--fin' }));
