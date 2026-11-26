@@ -251,6 +251,10 @@ const SUMMARY = (executive, refs = [1]) => ({ title: 'Réunion multi-pistes', su
     assert(/^\d+ s$/.test(await page.textContent('#analysisProgressTime')), 'temps total');
     assert(/⏳ 25 % · transcription/.test(await page.textContent('#recordingsList')), `liste : ${await page.textContent('#recordingsList')}`);
     assert(/Analyse IA en cours… 25 %/.test(await page.textContent('#detailStatusBadge')), 'badge de statut');
+    // L'audio se télécharge sans attendre la fin de l'analyse
+    assert(await page.isVisible('#analysisProgressDownload'), 'bouton de téléchargement absent du panneau');
+    const [early] = await Promise.all([page.waitForEvent('download'), page.click('#analysisProgressDownload')]);
+    assert(/piste 1 - salle\.wav$/.test(early.suggestedFilename()) && await page.evaluate(() => state.activeRecording.status) === 'processing', `téléchargement pendant l’analyse : ${early.suggestedFilename()}`);
     // Synthèse en cours, puis fin
     await page.waitForSelector('#analysisProgressSteps [data-step="synth"].analysis-step-running', { timeout: 10000 });
     assert(/· 50 %/.test(await page.textContent('#analysisProgressTitle')) && /50 % · synthèse/.test(await page.textContent('#recordingsList')), 'étape de synthèse');

@@ -34,6 +34,9 @@ async function open(browser, base, contextOptions) {
 }
 
 /** Le tiroir est-il visible à l'écran (dans la fenêtre, non masqué) ? */
+/** Texte affiché, espaces normalisés (les boutons flexibles séparent icône et texte par un retour à la ligne). */
+const shown = async (page, sel) => (await page.innerText(sel)).replace(/\s+/g, ' ').trim();
+
 const drawerShown = (page) => page.evaluate(() => {
   const r = document.getElementById('sidebar').getBoundingClientRect();
   return getComputedStyle(document.getElementById('sidebar')).visibility === 'visible' && r.right > 10 && r.left > -10;
@@ -74,6 +77,9 @@ const drawerShown = (page) => page.evaluate(() => {
     await page.waitForTimeout(300);
     assert(!(await drawerShown(page)), 'tiroir resté ouvert après l’import');
     assert(await page.textContent('#sidebarCount') === '1', 'compteur d’enregistrements');
+    // Libellés courts sur téléphone
+    assert(await page.isHidden('#providerName') && await page.isHidden('header p'), 'en-tête non allégé');
+    assert(await shown(page, '#downloadAudioBtn') === 'Audio (WAV)' && await shown(page, '#tabSummaryBtn') === '✨ Synthèse', `libellés courts : « ${await shown(page, '#downloadAudioBtn')} », « ${await shown(page, '#tabSummaryBtn')} »`);
     const fiche = await page.evaluate(() => ({ doc: document.documentElement.scrollWidth, btn: document.getElementById('publishConfluenceBtn').getBoundingClientRect().right }));
     assert(fiche.doc <= 390 && fiche.btn <= 390, `fiche : débordement (${JSON.stringify(fiche)})`);
     // Choisir un enregistrement dans la liste referme le tiroir
@@ -91,6 +97,13 @@ const drawerShown = (page) => page.evaluate(() => {
     const { context, page } = await open(browser, base, { viewport: { width: 1360, height: 900 } });
     assert(await page.isVisible('#sidebar') && await page.getAttribute('#sidebarToggle', 'aria-expanded') === 'true', 'colonne visible par défaut');
     assert(await page.isHidden('#sidebarScrim') && !(await page.evaluate(() => document.getElementById('sidebar').inert)), 'voile ou colonne inaccessible sur ordinateur');
+    // Libellés complets sur ordinateur (ils ne doivent être masqués que sur téléphone)
+    assert(await page.isVisible('#providerName') && await page.isVisible('header p') && await page.isVisible('#assistantToggleBtn .wide-sm') && await page.isVisible('#themeLabel'), 'libellés de l’en-tête masqués sur ordinateur');
+    assert(await page.isHidden('.sidebar-head'), 'en-tête du tiroir affiché sur ordinateur');
+    await page.setInputFiles('#fileUploadInput', AUDIO);
+    await page.waitForFunction(() => state.activeRecording && state.activeRecording.status === 'completed', null, { timeout: 15000 });
+    assert(await shown(page, '#downloadAudioBtn') === 'Télécharger l’audio (WAV)', `bouton de téléchargement : « ${await shown(page, '#downloadAudioBtn')} »`);
+    assert(await shown(page, '#tabSummaryBtn') === '✨ Synthèse IA & Plan d\'action' && await shown(page, '#tabTranscriptBtn') === '📝 Transcription mot pour mot', `onglets : « ${await shown(page, '#tabSummaryBtn')} »`);
     const before = await page.evaluate(() => document.querySelector('main').getBoundingClientRect().width);
     await page.click('#sidebarToggle');
     assert(await page.isHidden('#sidebar') && await page.getAttribute('#sidebarToggle', 'aria-expanded') === 'false', 'colonne non repliée');
