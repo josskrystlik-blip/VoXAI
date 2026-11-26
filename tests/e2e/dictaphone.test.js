@@ -66,6 +66,13 @@ const wav = fs.readFileSync(AUDIO);
     assert(mp3.frameSync, 'fichier non MP3 (pas d’en-tête de trame)');
     assert(mp3.size < rec.duration * 6000 + 4000, `MP3 trop lourd : ${mp3.size} octets pour ${rec.duration} s`);
     assert(Math.abs(mp3.duration - rec.duration) < 1.6, `durée du MP3 : ${mp3.duration.toFixed(1)} s (enregistrement : ${rec.duration} s)`);
+    // Téléchargement : bouton bien visible dans la barre d'actions de la fiche, fichier MP3 identique
+    assert(await page.evaluate(() => document.getElementById('downloadAudioBtn').parentElement.contains(document.getElementById('reprocessBtn'))), 'bouton de téléchargement hors de la barre d’actions');
+    const label = (await page.innerText('#downloadAudioBtn')).replace(/\s+/g, ' ').trim();
+    assert(label === 'Télécharger l’audio (MP3)', `libellé : ${label}`);
+    const [dlMp3] = await Promise.all([page.waitForEvent('download'), page.click('#downloadAudioBtn')]);
+    const got = fs.readFileSync(await dlMp3.path());
+    assert(/\.mp3$/.test(dlMp3.suggestedFilename()) && got.length === mp3.size && got[0] === 0xff, `fichier téléchargé : ${dlMp3.suggestedFilename()} (${got.length} octets)`);
     assert((await page.textContent('#summaryExecutive')).includes(ANALYSIS.summary.executive), 'synthèse non affichée');
     assert(await page.textContent('#detailStatusBadge') === 'Analysé par IA', 'badge de statut');
     assert(await page.textContent('#recordTimer') === '00:00' && await page.inputValue('#recordTitleInput') === '', 'dictaphone non réinitialisé');

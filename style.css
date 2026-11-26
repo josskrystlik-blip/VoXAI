@@ -798,3 +798,11 @@ mark.search-hit { background: rgba(250, 204, 21, 0.35); color: inherit; border-r
 :root[data-theme="light"] .sidebar-close { color: #475569; }
 :root[data-theme="light"] .sidebar-close:hover { color: #0f172a; background: rgba(15, 23, 42, 0.05); }
 :root[data-theme="light"] .sidebar-scrim { background: rgba(15, 23, 42, 0.35); }
+
+/* Affichage selon la largeur d'écran. Les classes Tailwind « hidden sm:inline » ne conviennent pas ici :
+   la règle .hidden de ce fichier (display: none !important) l'emporte sur elles à toutes les largeurs. */
+@media (max-width: 639.98px) { .wide-sm { display: none !important; } }
+@media (max-width: 767.98px) { .wide-md { display: none !important; } }
+@media (max-width: 1023.98px) { .wide-lg { display: none !important; } }
+@media (min-width: 640px) { .narrow-sm { display: none !important; } }
+@media (min-width: 768px) { .narrow-md { display: none !important; } }

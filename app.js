@@ -1955,16 +1955,34 @@ function safeFileName(text, fallback = 'fichier') {
 // Téléchargement de l'enregistrement audio (piste en cours de lecture)
 // ==============================================================================
 
+/** Format lisible d'un fichier audio (« MP3 », « WebM »…), d'après son type. */
+function audioFormatLabel(mime) {
+  const m = String(mime || '');
+  if (/mpeg|mp3/.test(m)) return 'MP3';
+  if (/webm/.test(m)) return 'WebM';
+  if (/wav/.test(m)) return 'WAV';
+  if (/mp4|m4a|aac/.test(m)) return 'M4A';
+  if (/ogg/.test(m)) return 'OGG';
+  if (/flac/.test(m)) return 'FLAC';
+  return '';
+}
+
 function updateDownloadAudioBtn() {
   const btn = document.getElementById('downloadAudioBtn');
   const rec = state.activeRecording;
   if (!btn || !rec) return;
   const files = rec.files || [];
   const multi = files.length > 1;
+  const file = files[state.activeFileIndex] || files[0];
+  const format = audioFormatLabel(file ? file.mime_type : rec.mime_type);
+  const suffix = format ? ` (${format})` : '';
   btn.title = multi
-    ? `Télécharger la piste ${state.activeFileIndex + 1} sur ${files.length} (choisissez une autre piste pour la télécharger)`
-    : "Télécharger l'enregistrement audio";
-  btn.querySelector('span').textContent = multi ? `Piste ${state.activeFileIndex + 1}` : 'Audio';
+    ? `Télécharger la piste ${state.activeFileIndex + 1} sur ${files.length}${suffix} : choisissez une autre piste pour la télécharger`
+    : `Télécharger l’enregistrement audio${suffix}`;
+  // Libellé complet sur ordinateur, court sur téléphone
+  document.getElementById('downloadAudioLabel').innerHTML = multi
+    ? `<span class="wide-sm">Télécharger la piste ${state.activeFileIndex + 1}</span><span class="narrow-sm">Piste ${state.activeFileIndex + 1}</span>${escapeHtml(suffix)}`
+    : `<span class="wide-sm">Télécharger l’audio</span><span class="narrow-sm">Audio</span>${escapeHtml(suffix)}`;
   btn.disabled = !files.length && !rec.filename;
 }
 
@@ -2158,6 +2176,8 @@ function renderAnalysisProgress() {
   const { percent, current } = progressSummary(p);
   const bar = document.getElementById('analysisProgressBar');
   bar.style.width = `${percent}%`;
+  // L'audio est déjà enregistré : téléchargeable sans attendre la fin de l'analyse
+  document.getElementById('analysisProgressDownload').classList.toggle('hidden', !(rec.files && rec.files.length) && !rec.filename);
   bar.classList.toggle('is-running', !!current);
   box.querySelector('[role="progressbar"]').setAttribute('aria-valuenow', String(percent));
   document.getElementById('analysisProgressTitle').textContent = `🧠 Analyse IA en cours · ${percent} %`;
@@ -2774,6 +2794,7 @@ function setupEventListeners() {
   elements.exportMarkdownBtn.addEventListener('click', exportAsMarkdown);
   elements.copyTranscriptBtn.addEventListener('click', copyTranscriptOnly);
   document.getElementById('downloadAudioBtn').addEventListener('click', downloadCurrentAudio);
+  document.getElementById('analysisProgressDownload').addEventListener('click', downloadCurrentAudio);
 
   // Actions du plan cochées : enregistrées dans la base locale
   elements.summaryActions.addEventListener('change', async (e) => {
