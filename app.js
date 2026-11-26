@@ -816,7 +816,7 @@ function renderRecordingsList() {
     // Status Badge
     let statusBadge = '<span class="text-[10px] text-emerald-400">✓ Prêt</span>';
     if (rec.status === 'processing') {
-      statusBadge = '<span class="text-[10px] text-amber-400 animate-pulse">⏳ Analyse...</span>';
+      statusBadge = `<span class="text-[10px] text-amber-400 whitespace-nowrap shrink-0" data-progress="${escapeHtml(rec.id)}">⏳ ${escapeHtml(listProgressLabel(rec.id))}</span>`;
     } else if (rec.status === 'error') {
       statusBadge = '<span class="text-[10px] text-red-400">✗ Erreur</span>';
     } else if (rec.status === 'pending') {
@@ -962,6 +962,7 @@ function renderRecordingDetails() {
 
   updateDownloadAudioBtn();
   updateAssistantContext();
+  renderAnalysisProgress();
   document.dispatchEvent(new CustomEvent('voxai:recording-shown'));
 
   // Render Tabs
@@ -1880,8 +1881,83 @@ function buildChatActions(content) {
 // Déclencheurs IA (Traitement & Chat)
 // ==============================================================================
 
+// ==============================================================================
+// Avancement de l'analyse IA : étapes publiées par db.js (événement « voxai:progress »)
+// ==============================================================================
+
+/** « 45 s », « 2 min 05 s », « 1 h 02 min ». */
+function formatElapsed(ms) {
+  const s = Math.max(0, Math.round((ms || 0) / 1000));
+  if (s < 60) return `${s} s`;
+  if (s < 3600) return `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')} s`;
+  return `${Math.floor(s / 3600)} h ${String(Math.floor((s % 3600) / 60)).padStart(2, '0')} min`;
+}
+
+/** Pourcentage et étape en cours d'une analyse. */
+function progressSummary(p) {
+  if (!p || !p.steps.length) return { percent: 2, current: null };
+  const total = p.steps.length;
+  const done = p.steps.filter(x => x.status === 'done').length;
+  const current = p.steps.find(x => x.status === 'running') || null;
+  const part = current && current.sub ? (current.sub.current - 1) / current.sub.total : 0;
+  const percent = p.done && p.ok ? 100 : Math.min(99, Math.max(2, Math.round(((done + part) / total) * 100)));
+  return { percent, current };
+}
+
+function renderAnalysisProgress() {
+  const box = document.getElementById('analysisProgress');
+  if (!box) return;
+  const rec = state.activeRecording;
+  const p = rec && window.VoxProgress && window.VoxProgress[rec.id];
+  const running = rec && (rec.status === 'processing' || (p && !p.done));
+  box.classList.toggle('hidden', !running);
+  if (!running) { clearInterval(state.progressTimer); state.progressTimer = null; return; }
+  if (!state.progressTimer) state.progressTimer = setInterval(renderAnalysisProgress, 1000);
+
+  const { percent, current } = progressSummary(p);
+  const bar = document.getElementById('analysisProgressBar');
+  bar.style.width = `${percent}%`;
+  bar.classList.toggle('is-running', !!current);
+  box.querySelector('[role="progressbar"]').setAttribute('aria-valuenow', String(percent));
+  document.getElementById('analysisProgressTitle').textContent = `🧠 Analyse IA en cours · ${percent} %`;
+  document.getElementById('analysisProgressTime').textContent = p ? formatElapsed(Date.now() - p.started) : '';
+  elements.detailStatusBadge.textContent = `Analyse IA en cours… ${percent} %`;
+
+  const icon = { done: '✓', running: '⏳', failed: '✗', pending: '○' };
+  const steps = p ? p.steps : [{ id: 'prep', label: 'Préparation de l’analyse', status: 'running', t0: Date.now() }];
+  document.getElementById('analysisProgressSteps').innerHTML = steps.map(x => {
+    const time = x.status === 'done' ? formatElapsed(x.ms) + (x.detail ? ` · ${x.detail}` : '')
+      : x.status === 'running' ? `depuis ${formatElapsed(Date.now() - x.t0)}` : '';
+    return `<li class="analysis-step analysis-step-${x.status}" data-step="${escapeHtml(x.id)}">
+      <span class="analysis-step-icon" aria-hidden="true">${icon[x.status] || '○'}</span>
+      <span class="analysis-step-label">${escapeHtml(x.label)}</span>
+      <span class="analysis-step-time">${escapeHtml(time)}</span>
+    </li>`;
+  }).join('');
+}
+
+/** Libellé court de l'avancement pour la liste des enregistrements. */
+function listProgressLabel(recId) {
+  const p = window.VoxProgress && window.VoxProgress[recId];
+  if (!p || p.done) return 'Analyse...';
+  const { percent, current } = progressSummary(p);
+  const what = current ? (/^Transcription/.test(current.label) ? 'transcription' : /^Synthèse/.test(current.label) ? 'synthèse' : 'enregistrement') : '';
+  return `${percent} %${what ? ` · ${what}` : ''}`;
+}
+
+document.addEventListener('voxai:progress', (e) => {
+  const p = e.detail;
+  if (state.activeRecording && state.activeRecording.id === p.recId) renderAnalysisProgress();
+  // Liste dessinée avant le début de l'analyse : l'enregistrement y passe « en cours »
+  const r = (state.recordings || []).find(x => x.id === p.recId);
+  if (r && !p.done && r.status !== 'processing') { r.status = 'processing'; renderRecordingsList(); }
+  const badge = document.querySelector(`#recordingsList [data-progress="${CSS.escape(p.recId)}"]`);
+  if (badge) badge.textContent = `⏳ ${listProgressLabel(p.recId)}`;
+});
+
 async function triggerAIProcessing(recId) {
   showToast('Analyse de l’audio en cours par l’IA...', '🧠');
+  if (window.VoxProgress) delete window.VoxProgress[recId]; // avancement d'une analyse précédente
   if (state.activeRecording && state.activeRecording.id === recId) {
     state.activeRecording.status = 'processing';
     renderRecordingDetails();
@@ -1893,7 +1969,7 @@ async function triggerAIProcessing(recId) {
     });
     const data = await res.json();
     if (data.success) {
-      showToast('Analyse IA terminée avec succès !', '🎉');
+      showToast(`Analyse IA terminée${data.duration_ms ? ` en ${formatElapsed(data.duration_ms)}` : ''} !`, '🎉');
       await selectRecording(recId);
       await loadRecordings();
     } else if (data.offline) {

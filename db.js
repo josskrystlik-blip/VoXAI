@@ -480,6 +480,47 @@ Règles impératives :
     return cleanJson(text);
   }
 
+  /**
+   * Avancement d'une analyse, étape par étape (transcription de chaque piste, synthèse, enregistrement).
+   * L'état est publié dans window.VoxProgress[id] et annoncé par l'événement « voxai:progress ».
+   */
+  function progressReporter(recId) {
+    const p = { recId, started: Date.now(), steps: [], done: false };
+    const emit = () => {
+      (window.VoxProgress = window.VoxProgress || {})[recId] = p;
+      document.dispatchEvent(new CustomEvent('voxai:progress', { detail: p }));
+    };
+    const find = (id) => p.steps.find(x => x.id === id);
+    return {
+      plan(list) { list.forEach(x => { if (!find(x.id)) p.steps.push({ ...x, status: 'pending' }); }); emit(); },
+      start(id, label, sub = null) {
+        let x = find(id);
+        if (!x) { x = { id, label }; p.steps.push(x); }
+        Object.assign(x, { status: 'running', t0: x.t0 || Date.now(), sub }, label ? { label } : {});
+        emit();
+      },
+      done(id, detail) {
+        const x = find(id);
+        if (!x) return;
+        Object.assign(x, { status: 'done', ms: Date.now() - (x.t0 || Date.now()), sub: null }, detail ? { detail } : {});
+        emit();
+      },
+      fail(id, detail) {
+        const x = find(id);
+        if (!x) return;
+        Object.assign(x, { status: 'failed', ms: Date.now() - (x.t0 || Date.now()), sub: null }, detail ? { detail } : {});
+        emit();
+      },
+      finish(ok, error) {
+        p.steps.forEach(x => { if (x.status === 'running') { x.status = ok ? 'done' : 'failed'; x.ms = Date.now() - (x.t0 || Date.now()); } });
+        Object.assign(p, { done: true, ok, error: error || null, ms: Date.now() - p.started });
+        emit();
+      }
+    };
+  }
+  const NO_PROGRESS = { plan() {}, start() {}, done() {}, fail() {}, finish() {} };
+  const hostOfUrl = (u) => { try { return new URL(u).host; } catch { return String(u || ''); } };
+
   /** Horodatage « mm:ss » (ou « h:mm:ss » au-delà d'une heure) à partir de secondes. */
   function clock(sec) {
     const s = Math.max(0, Math.floor(Number(sec) || 0));
@@ -546,18 +587,33 @@ Réponds EXCLUSIVEMENT avec un JSON pur respectant cette structure exacte :
     }
   }
 
+  /** Fin de la transcription d'une piste : nombre de passages, ou échec si aucune parole. */
+  function trackDone(progress, i, segs) {
+    const n = segs.filter(seg => String(seg.text || '').trim()).length;
+    if (n) progress.done(`track${i}`, `${n} passage${n > 1 ? 's' : ''}`);
+    else progress.fail(`track${i}`, 'aucune parole transcrite');
+  }
+
   async function transcribeTracks(audioFiles, cfg, ctx) {
+    const progress = (ctx && ctx.progress) || NO_PROGRESS;
     const transcription = [];
     if (cfg.provider === 'gemini' || cfg.local_stt_mode === 'cloud') {
       if (!(cfg.gemini_api_key || '').trim()) {
         throw new Error("Pour utiliser la transcription rapide Cloud avec votre LLM local, la clé d'API Gemini doit être configurée dans les paramètres (ou choisissez le mode 'Whisper Local' 100% hors-ligne).");
       }
-      for (let i = 0; i < audioFiles.length; i++) transcription.push(...await transcribeTrackWithGemini(audioFiles[i], i, audioFiles.length, cfg, ctx));
+      for (let i = 0; i < audioFiles.length; i++) {
+        progress.start(`track${i}`);
+        const segs = await transcribeTrackWithGemini(audioFiles[i], i, audioFiles.length, cfg, ctx);
+        transcription.push(...segs);
+        trackDone(progress, i, segs);
+      }
     } else {
       const sttUrl = (cfg.on_prem_stt_url || 'http://localhost:8000/v1').replace(/\/+$/, '');
       for (let i = 0; i < audioFiles.length; i++) {
+        progress.start(`track${i}`);
         const segs = await transcribeWhisperLocal(audioFiles[i], sttUrl, cfg.on_prem_stt_model, sttApiKey(cfg, sttUrl));
         transcription.push(...segs.map(seg => ({ file_index: i + 1, file_name: audioFiles[i].name, speaker: `Orateur (Piste ${i + 1})`, ...seg })));
+        trackDone(progress, i, segs);
       }
     }
     checkTracks(transcription, audioFiles);
@@ -622,6 +678,7 @@ Réponds EXCLUSIVEMENT avec un JSON pur respectant cette structure exacte :
   "summary": ${SUMMARY_SCHEMA(multi ? "consolidé de l'ensemble des pistes " : "de l'échange ou de la note ")}
 }`;
 
+    const progress = (ctx && ctx.progress) || NO_PROGRESS;
     if (cfg.provider === 'gemini' || total <= LOCAL_PART_CHARS) {
       const prompt = `Tu es l'analyste IA d'un dictaphone intelligent.
 Voici la transcription complète de ${audioFiles.length} enregistrement(s) (${filesDesc}) :
@@ -642,6 +699,7 @@ Chaque ligne de la transcription commence par son numéro (#1, #2...). ${REFS_RU
     const partials = [];
     for (let k = 0; k < parts.length; k++) {
       const p = parts[k];
+      progress.start('synth', `Synthèse par parties (réunion longue) : partie ${k + 1}/${parts.length}, piste ${p.track}`, { current: k + 1, total: parts.length + 1 });
       const af = audioFiles[p.track - 1] || {};
       const partial = await askJson(cfg, `Tu es l'analyste IA d'un dictaphone intelligent.
 Voici la partie ${k + 1} sur ${parts.length} de la transcription d'une réunion (piste ${p.track} : '${af.name || ''}') :
@@ -654,6 +712,7 @@ Résume CETTE partie sans rien omettre d'important (sujets, décisions, actions 
 Chaque ligne commence par son numéro (#n) : utilise ces numéros dans les "refs".` + context);
       partials.push({ partie: k + 1, piste: p.track, fichier: af.name || '', synthese: partial.summary || partial });
     }
+    progress.start('synth', `Synthèse par parties : consolidation des ${parts.length} parties`, { current: parts.length + 1, total: parts.length + 1 });
     return askJson(cfg, `Tu es l'analyste IA d'un dictaphone intelligent.
 La transcription d'une réunion (${filesDesc}) était trop longue pour être analysée d'un seul tenant : elle a été résumée en ${parts.length} parties, dans l'ordre chronologique de chaque piste. Voici ces synthèses partielles (JSON) :
 
@@ -667,15 +726,33 @@ ${schema}` + context);
   }
 
   async function processRecording(audioFiles, cfg, ctx) {
+    const progress = (ctx && ctx.progress) || NO_PROGRESS;
+    const mb = (b) => `${Math.max(0.1, Math.round((b && b.size || 0) / 1e5) / 10).toLocaleString('fr-FR')} Mo`;
     // Une seule piste avec Gemini : transcription et synthèse en une requête
-    if (cfg.provider === 'gemini' && audioFiles.length === 1) return processWithGemini(audioFiles, cfg, ctx);
+    if (cfg.provider === 'gemini' && audioFiles.length === 1) {
+      progress.plan([{ id: 'gemini', label: `Analyse par Gemini (transcription et synthèse) · audio de ${mb(audioFiles[0].blob)}` }, { id: 'save', label: 'Enregistrement du compte rendu' }]);
+      progress.start('gemini');
+      const result = await processWithGemini(audioFiles, cfg, ctx);
+      progress.done('gemini');
+      return result;
+    }
     // Plusieurs pistes, Hybride ou 100 % sur site : chaque piste est transcrite séparément, puis la
     // synthèse est faite sur la transcription complète (aucune piste ne peut être laissée de côté)
+    const viaGemini = cfg.provider === 'gemini' || cfg.local_stt_mode === 'cloud';
+    const stt = viaGemini ? 'Gemini' : `Whisper · ${hostOfUrl(cfg.on_prem_stt_url || 'http://localhost:8000/v1')}`;
+    const llmName = cfg.provider === 'gemini' ? 'Gemini' : `LLM ${localChatUrl(cfg).model} · ${hostOfUrl(localChatUrl(cfg).base)}`;
+    progress.plan([
+      ...audioFiles.map((af, i) => ({ id: `track${i}`, label: `Transcription ${audioFiles.length > 1 ? `piste ${i + 1}/${audioFiles.length} « ${af.name} » ` : ''}(${stt}) · ${mb(af.blob)}` })),
+      { id: 'synth', label: `Synthèse de la transcription complète (${llmName})` },
+      { id: 'save', label: 'Enregistrement du compte rendu' }
+    ]);
     const transcription = await transcribeTracks(audioFiles, cfg, ctx);
     const fallbackTitle = audioFiles.length ? stripName(audioFiles[0].name) : 'Session analysée';
     let parsed;
     try {
+      progress.start('synth');
       parsed = await summarizeTranscript(transcription, audioFiles, cfg, ctx);
+      progress.done('synth');
     } catch (err) {
       if (cfg.provider === 'gemini' || /HTTP|accès refusé|Délai|fetch|network/i.test(err.message)) throw err;
       // LLM de l'entreprise : réponse non JSON → transcription conservée, synthèse minimale
@@ -1330,9 +1407,12 @@ ${EDIT_RULE}`;
         const series = rec.series_id ? await store.get('series', rec.series_id) : null;
         const openActions = series ? await openActionsBefore(rec) : [];
         await store.put('recordings', { ...rec, status: 'processing', error_message: null });
+        const progress = progressReporter(recId);
+        const start = Date.now();
         try {
           // Contexte : série (participants, type, actions ouvertes) et date de la réunion (échéances)
-          const result = await processRecording(audioFiles, cfg, { ...(series || {}), open_actions: openActions, meeting_date: rec.created_at });
+          const result = await processRecording(audioFiles, cfg, { ...(series || {}), open_actions: openActions, meeting_date: rec.created_at, progress });
+          progress.start('save', 'Enregistrement du compte rendu');
           const fresh = await store.get('recordings', recId);
           if (fresh) {
             const transcription = applySeriesAliases(sanitizeTranscription(result.transcription), series);
@@ -1349,8 +1429,11 @@ ${EDIT_RULE}`;
             });
           }
           const saved = await store.get('recordings', recId);
-          return json(200, { success: true, title: saved && saved.title, transcription: saved && saved.transcription, summary: saved && saved.summary });
+          progress.done('save');
+          progress.finish(true);
+          return json(200, { success: true, duration_ms: Date.now() - start, title: saved && saved.title, transcription: saved && saved.transcription, summary: saved && saved.summary });
         } catch (err) {
+          progress.finish(false, err.message);
           const fresh = await store.get('recordings', recId);
           // Serveur d'IA injoignable (réseau coupé, VPN absent…) : en attente plutôt qu'en erreur
           const offline = isNetworkError(err);

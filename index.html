@@ -312,6 +312,18 @@
             </div>
           </div>
 
+          <!-- Avancement de l'analyse IA (étapes, barre de progression, temps écoulé) -->
+          <div id="analysisProgress" class="hidden glass-card p-3.5 border border-amber-500/20 space-y-2.5" role="status" aria-live="polite">
+            <div class="flex items-center justify-between gap-3 text-xs">
+              <span id="analysisProgressTitle" class="font-semibold text-amber-300">🧠 Analyse IA en cours</span>
+              <span id="analysisProgressTime" class="font-mono text-slate-400 shrink-0"></span>
+            </div>
+            <div class="analysis-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-label="Avancement de l'analyse">
+              <div id="analysisProgressBar" class="analysis-bar-fill"></div>
+            </div>
+            <ol id="analysisProgressSteps" class="space-y-1 text-[11px]"></ol>
+          </div>
+
           <!-- Embedded Luxury Audio Player -->
           <div class="glass-card p-3.5 flex items-center gap-4 shadow-xl border border-white/10">
             <!-- Play/Pause Button -->
