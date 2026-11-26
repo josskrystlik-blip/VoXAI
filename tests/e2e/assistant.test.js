@@ -7,7 +7,7 @@
  */
 'use strict';
 
-const { ANALYSIS, startServer, createRunner, assert, launchBrowser, gemini, openApp, importAudio, waitAnalysed, downloadText, emlText, emlSubject, recording } = require('./lib');
+const { ANALYSIS, startServer, createRunner, assert, launchBrowser, gemini, llmServer, whisperServer, openApp, importAudio, waitAnalysed, downloadText, emlText, emlSubject, recording } = require('./lib');
 
 const CONFIG = { provider: 'gemini', gemini_api_key: 'cle-test' };
 const EMAIL = 'Objet : Compte rendu du point projet\n\nBonjour à tous,\n\nLe budget est **validé**.\n\n- Bob envoie le devis vendredi\n\nBonne journée,\nAlice';
@@ -137,6 +137,57 @@ function assistantReplies(ctx) {
     await page.click('#chatSendBtn');
     await page.waitForFunction(() => /proposition de correction de l'IA est illisible/.test(document.querySelector('#chatMessages').textContent));
     assert(page.jsErrors.length === 0, `erreurs : ${page.jsErrors}`);
+    await context.close();
+  });
+
+  await t.scenario('Réponses longues : texte en plusieurs morceaux, raisonnement écarté, coupure signalée', async () => {
+    let mode = 'morceaux';
+    const g = gemini({
+      chat: () => mode === 'morceaux'
+        ? { parts: [
+            { text: 'Je dois rédiger un e-mail à partir de la synthèse…', thought: true },
+            { text: 'Objet : Synthèse du point d’équipe\n\nBonjour à tous,\n\nVoici les principaux points abord' },
+            { text: 'és :\n\n- Budget de 120 k€ validé\n- Bob envoie le devis vendredi\n\nBonne journée,\nAlice' }] }
+        : mode === 'limite'
+          ? { parts: [{ text: 'Objet : Synthèse\n\nBonjour à tous,\n\nVoici les principaux points abord' }], finishReason: 'MAX_TOKENS' }
+          : { parts: [], finishReason: 'SAFETY' }
+    });
+    const { context, page } = await openApp(browser, base, { gemini: g, config: CONFIG });
+    await importAudio(page);
+    await page.click('#tabChatBtn');
+    await page.fill('#chatInput', 'Rédige un e-mail de synthèse pour les participants');
+    await page.click('#chatSendBtn');
+    await page.waitForSelector('#chatMessages .mail-split');
+    const shown = await page.textContent('#chatMessages > div:last-child');
+    assert(shown.includes('Voici les principaux points abordés :') && shown.includes('Bob envoie le devis vendredi') && shown.includes('Bonne journée'), `réponse tronquée : ${shown.slice(0, 160)}`);
+    assert(!shown.includes('Je dois rédiger'), 'raisonnement du modèle affiché à la place de la réponse');
+    const [dl] = await Promise.all([page.waitForEvent('download'), page.click('#chatMessages > div:last-child .mail-main')]);
+    assert(emlText(await downloadText(dl)).includes('Bob envoie le devis vendredi'), 'e-mail incomplet');
+    // Limite de longueur atteinte : la réponse partielle est signalée
+    mode = 'limite';
+    await page.fill('#chatInput', 'Rédige un autre e-mail');
+    await page.click('#chatSendBtn');
+    await page.waitForFunction(() => /Réponse interrompue/.test(document.querySelector('#chatMessages > div:last-child').textContent));
+    // Aucune réponse (filtrage) : message clair, pas d'erreur JavaScript
+    mode = 'vide';
+    await page.fill('#chatInput', 'Encore');
+    await page.click('#chatSendBtn');
+    await page.waitForFunction(() => /aucune réponse/i.test(document.querySelector('#chatMessages > div:last-child').textContent));
+    assert(/SAFETY/.test(await page.textContent('#chatMessages > div:last-child')), 'motif de l’absence de réponse');
+    assert(page.jsErrors.length === 0, `erreurs : ${page.jsErrors}`);
+    await context.close();
+  });
+
+  await t.scenario('LLM de l’entreprise : réponse coupée par la limite du serveur signalée', async () => {
+    const llm = llmServer({ reply: () => ({ content: 'Objet : Synthèse\n\nBonjour à tous,\n\nVoici les principaux points abord', finish_reason: 'length' }) });
+    const w = whisperServer();
+    const { context, page } = await openApp(browser, base, { servers: { 'llm.corp.test': llm.handler, 'whisper.corp.test': w.handler }, config: { provider: 'local', local_llm_url: 'https://llm.corp.test/v1', local_llm_model: 'gpt-oss-120b', on_prem_stt_url: 'https://whisper.corp.test/v1' } });
+    await importAudio(page);
+    await page.click('#tabChatBtn');
+    await page.fill('#chatInput', 'Rédige un e-mail de synthèse pour les participants');
+    await page.click('#chatSendBtn');
+    await page.waitForFunction(() => /Réponse interrompue/.test(document.querySelector('#chatMessages > div:last-child').textContent));
+    assert(/limite de longueur/.test(await page.textContent('#chatMessages > div:last-child')), 'cause non expliquée');
     await context.close();
   });
 

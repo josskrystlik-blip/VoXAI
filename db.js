@@ -235,6 +235,23 @@
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   /**
+   * Texte complet d'une réponse Gemini : tous les morceaux (« parts ») mis bout à bout, sans le
+   * raisonnement du modèle (parts « thought »). Une réponse longue arrive souvent en plusieurs
+   * morceaux : n'en lire que le premier la coupait en plein mot.
+   */
+  function geminiText(data) {
+    const cand = data && data.candidates && data.candidates[0];
+    const parts = (cand && cand.content && cand.content.parts) || [];
+    const text = parts.filter(p => p && !p.thought && typeof p.text === 'string').map(p => p.text).join('');
+    const finish = (cand && cand.finishReason) || '';
+    if (!text.trim()) {
+      const reason = (data && data.promptFeedback && data.promptFeedback.blockReason) || finish || 'réponse vide';
+      throw Object.assign(new Error(`Gemini n'a renvoyé aucune réponse (${reason}). Reformulez la demande ou réessayez.`), { fatal: true });
+    }
+    return { text, truncated: finish === 'MAX_TOKENS' };
+  }
+
+  /**
    * Appelle Gemini en essayant les modèles de secours en cas de 503/429/404.
    * Si tous les modèles sont saturés (503/429), refait un tour après une pause.
    */
@@ -262,8 +279,7 @@
             if ([503, 429, 404].includes(res.status) || !strict) continue;
             throw Object.assign(new Error(lastErr), { fatal: true });
           }
-          const data = await res.json();
-          return { text: data.candidates[0].content.parts[0].text, model: m };
+          return { ...geminiText(await res.json()), model: m };
         } catch (err) {
           if (err.fatal) throw err;
           saturated = false;
@@ -306,7 +322,7 @@
    * jsonMode demande une réponse JSON (response_format) ; si le serveur refuse ce paramètre,
    * la requête est relancée sans.
    */
-  async function localChat(cfg, messages, temperature, timeoutMs, { jsonMode = false } = {}) {
+  async function localChat(cfg, messages, temperature, timeoutMs, { jsonMode = false, meta = false } = {}) {
     const { chat, model } = localChatUrl(cfg);
     const send = (extra) => fetchWithTimeout(chat, {
       method: 'POST',
@@ -323,7 +339,7 @@
     const msg = (data.choices && data.choices[0] && data.choices[0].message) || {};
     const content = stripReasoning(msg.content || '');
     if (!content) throw new Error('réponse vide du modèle (augmentez la limite de tokens du serveur ?)');
-    return content;
+    return meta ? { text: content, truncated: data.choices[0].finish_reason === 'length' } : content;
   }
 
   /** Retire un éventuel raisonnement visible (balises <think>, canaux « harmony » de gpt-oss). */
@@ -464,113 +480,216 @@ Règles impératives :
     return cleanJson(text);
   }
 
-  async function transcribeWithGemini(audioFiles, cfg, ctx) {
-    if (!(cfg.gemini_api_key || '').trim()) {
-      throw new Error("Pour utiliser la transcription rapide Cloud avec votre LLM local, la clé d'API Gemini doit être configurée dans les paramètres (ou choisissez le mode 'Whisper Local' 100% hors-ligne).");
-    }
-    const multi = audioFiles.length > 1;
-    const filesDesc = audioFiles.map(a => `'${a.name}'`).join(', ');
-    const prompt = multi
-      ? `Tu es un transcripteur audio professionnel de haute précision.
-Transcris fidèlement mot à mot ces ${audioFiles.length} enregistrements audio (${filesDesc}) d'une même session.
-Pour chaque segment de parole, indique file_index, file_name, speaker, timestamp, et text.
-Réponds EXCLUSIVEMENT avec un JSON pur :
-{"transcription": [{"file_index": 1, "file_name": "${audioFiles[0].name}", "speaker": "Orateur 1", "timestamp": "00:00", "text": "Texte fidèlement retranscrit..."}]}`
-      : `Tu es un transcripteur audio professionnel de haute précision.
-Transcris fidèlement mot à mot cet enregistrement audio.
-Indique les orateurs distincts et les horodatages réels.
-Réponds EXCLUSIVEMENT avec un JSON pur respectant cette structure exacte :
-{"transcription": [{"file_index": 1, "speaker": "Orateur 1", "timestamp": "00:00", "text": "Texte fidèlement retranscrit..."}]}`;
+  /** Horodatage « mm:ss » (ou « h:mm:ss » au-delà d'une heure) à partir de secondes. */
+  function clock(sec) {
+    const s = Math.max(0, Math.floor(Number(sec) || 0));
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+    const pad = (n) => String(n).padStart(2, '0');
+    return h ? `${h}:${pad(m)}:${pad(r)}` : `${pad(m)}:${pad(r)}`;
+  }
 
-    const parts = [{ text: prompt + seriesHint(ctx) }, ...(await audioParts(audioFiles, 'PISTE'))];
-    const { text } = await geminiGenerate(cfg, {
+  /**
+   * Transcription d'UNE piste par Gemini (une requête par piste) : chaque piste est transcrite en
+   * entier, sans dépendre de la place laissée par les autres pistes dans la réponse du modèle.
+   */
+  async function transcribeTrackWithGemini(af, index, total, cfg, ctx) {
+    const prompt = `Tu es un transcripteur audio professionnel de haute précision.
+Transcris fidèlement mot à mot cet enregistrement audio${total > 1 ? ` (piste ${index + 1} sur ${total} d'une même réunion : '${af.name}')` : ''}, du début à la fin, sans rien résumer ni omettre.
+Indique les orateurs distincts et les horodatages réels (depuis le début de cette piste).
+Réponds EXCLUSIVEMENT avec un JSON pur respectant cette structure exacte :
+{"transcription": [{"speaker": "Orateur 1", "timestamp": "00:00", "text": "Texte fidèlement retranscrit..."}]}`;
+    const parts = [{ text: prompt + seriesHint(ctx) }, ...(await audioParts([af], 'PISTE'))];
+    const { text, truncated } = await geminiGenerate(cfg, {
       contents: [{ parts }],
       generationConfig: { temperature: 0.1, response_mime_type: 'application/json' }
-    }, ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'], 120000, { strict: false });
-    return cleanJson(text).transcription || [];
+    }, ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'], 300000, { strict: false });
+    if (truncated) throw new Error(`piste ${index + 1} (« ${af.name} ») trop longue pour une seule réponse du modèle : découpez-la en fichiers plus courts`);
+    return (cleanJson(text).transcription || []).map(seg => ({ ...seg, file_index: index + 1, file_name: af.name }));
   }
 
-  async function summarizeWithLocalLLM(transcription, audioFiles, cfg, ctx) {
-    const { model } = localChatUrl(cfg);
-    const multi = audioFiles.length > 1;
-    const transcript = transcription.map((it, i) => {
-      const prefix = `#${i + 1} ` + (multi ? `[Piste ${it.file_index || 1} • ${it.timestamp || '00:00'}]` : `[${it.timestamp || '00:00'}]`);
-      return `${prefix} ${it.speaker || 'Orateur'}: ${it.text || ''}`;
-    }).join('\n');
-    const filesDesc = audioFiles.map(a => `'${a.name}'`).join(', ');
+  /** Transcription d'une piste par le serveur Whisper de l'entreprise, avec horodatages. */
+  async function transcribeWhisperLocal(af, sttUrl, sttModel, apiKey) {
+    const send = (verbose) => {
+      const form = new FormData();
+      form.append('model', sttModel || 'whisper-1');
+      if (verbose) form.append('response_format', 'verbose_json');
+      form.append('file', af.blob, af.filename);
+      // Une piste d'une heure peut demander plusieurs minutes sur un serveur sans GPU
+      return fetchWithTimeout(`${sttUrl}/audio/transcriptions`, { method: 'POST', body: form, headers: authHeaders(apiKey) }, 1800000);
+    };
+    let res = await send(true);
+    if (res.status === 400 || res.status === 422) res = await send(false); // serveur sans verbose_json
+    if (!res.ok) throw new Error(`Whisper local (HTTP ${res.status}): ${await res.text()}`);
+    const data = await res.json();
+    const segments = Array.isArray(data.segments) ? data.segments.filter(s => s && String(s.text || '').trim()) : [];
+    if (!segments.length) return [{ timestamp: '00:00', text: String(data.text || '').trim() }];
+    // Segments Whisper (quelques secondes) regroupés en passages lisibles : au plus ~400 caractères
+    // et une minute, pour que chaque passage garde un horodatage juste
+    const out = [];
+    let since = 0;
+    for (const s of segments) {
+      const text = String(s.text).trim();
+      const start = Number(s.start) || 0;
+      const last = out[out.length - 1];
+      if (last && last.text.length + text.length < 400 && start - since < 60) last.text += ' ' + text;
+      else { out.push({ timestamp: clock(start), text }); since = start; }
+    }
+    return out;
+  }
 
-    const prompt = `Tu es l'analyste IA d'un dictaphone intelligent.
-Voici la transcription complète de ${audioFiles.length} enregistrement(s) (${filesDesc}) :
-
-"""${transcript}"""
-
-Analyse attentivement cette transcription et génère une synthèse consolidée et structurée.
-Tu dois répondre EXCLUSIVEMENT avec un objet JSON valide (sans aucun commentaire, sans bloc markdown superflu) respectant exactement cette structure :
-
-{
-  "title": "Titre clair et représentatif de la session ou du sujet principal",
-  "language": "fr",
-  "summary": ${SUMMARY_SCHEMA("de l'échange ou de la note ")}
-}
-
-Chaque ligne de la transcription commence par son numéro (#1, #2...). ${REFS_RULE}`;
-
-    const fallbackTitle = audioFiles.length ? stripName(audioFiles[0].name) : 'Session analysée';
-    try {
-      const content = await localChat(cfg, [
-        { role: 'system', content: 'Tu es un analyste IA de réunions et notes vocales. Tu réponds UNIQUEMENT par un objet JSON pur et valide, sans markdown.' },
-        { role: 'user', content: prompt + seriesHint(ctx) + followupHint(ctx) + dateHint(ctx) }
-      ], 0.2, 300000, { jsonMode: true });
-      const parsed = cleanJson(content);
-      parsed.transcription = transcription;
-      if (!parsed.title) parsed.title = fallbackTitle;
-      return parsed;
-    } catch (err) {
-      console.warn('[LLM local] Réponse non standard :', err);
-      return {
-        title: fallbackTitle,
-        language: 'fr',
-        transcription,
-        summary: {
-          executive: `Analyse réalisée par le modèle local (${model}). Consultez la transcription détaillée.`,
-          key_points: ["Transcription complète disponible dans l'onglet Transcription."],
-          decisions: [],
-          action_items: [],
-          tags: ['LocalLLM', model]
-        }
-      };
+  /** Chaque piste doit avoir produit du texte : sinon l'analyse s'arrête en nommant la piste. */
+  function checkTracks(transcription, audioFiles) {
+    const missing = audioFiles.filter((af, i) => !transcription.some(seg => (seg.file_index || 1) === i + 1 && String(seg.text || '').trim()));
+    if (missing.length) {
+      const names = missing.map(af => `piste ${audioFiles.indexOf(af) + 1} (« ${af.name} »)`).join(', ');
+      throw new Error(`aucune parole transcrite pour ${names} : vérifiez le fichier audio, puis relancez l'analyse`);
     }
   }
 
-  async function transcribeWhisperLocal(af, sttUrl, sttModel, apiKey) {
-    const form = new FormData();
-    form.append('model', sttModel || 'whisper-1');
-    form.append('file', af.blob, af.filename);
-    const res = await fetchWithTimeout(`${sttUrl}/audio/transcriptions`, {
-      method: 'POST', body: form, headers: authHeaders(apiKey)
-    }, 300000);
-    if (!res.ok) throw new Error(`Whisper local (HTTP ${res.status}): ${await res.text()}`);
-    return (await res.json()).text || '';
+  async function transcribeTracks(audioFiles, cfg, ctx) {
+    const transcription = [];
+    if (cfg.provider === 'gemini' || cfg.local_stt_mode === 'cloud') {
+      if (!(cfg.gemini_api_key || '').trim()) {
+        throw new Error("Pour utiliser la transcription rapide Cloud avec votre LLM local, la clé d'API Gemini doit être configurée dans les paramètres (ou choisissez le mode 'Whisper Local' 100% hors-ligne).");
+      }
+      for (let i = 0; i < audioFiles.length; i++) transcription.push(...await transcribeTrackWithGemini(audioFiles[i], i, audioFiles.length, cfg, ctx));
+    } else {
+      const sttUrl = (cfg.on_prem_stt_url || 'http://localhost:8000/v1').replace(/\/+$/, '');
+      for (let i = 0; i < audioFiles.length; i++) {
+        const segs = await transcribeWhisperLocal(audioFiles[i], sttUrl, cfg.on_prem_stt_model, sttApiKey(cfg, sttUrl));
+        transcription.push(...segs.map(seg => ({ file_index: i + 1, file_name: audioFiles[i].name, speaker: `Orateur (Piste ${i + 1})`, ...seg })));
+      }
+    }
+    checkTracks(transcription, audioFiles);
+    return transcription;
+  }
+
+  /** Demande JSON au moteur choisi (Gemini, ou LLM de l'entreprise) : réponse analysée. */
+  async function askJson(cfg, prompt) {
+    if (cfg.provider === 'gemini') {
+      const { text, truncated } = await geminiGenerate(cfg, {
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.2, response_mime_type: 'application/json' }
+      }, ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'], 180000);
+      if (truncated) throw new Error('synthèse interrompue par la limite de longueur du modèle');
+      return cleanJson(text);
+    }
+    return cleanJson(await localChat(cfg, [
+      { role: 'system', content: 'Tu es un analyste IA de réunions et notes vocales. Tu réponds UNIQUEMENT par un objet JSON pur et valide, sans markdown.' },
+      { role: 'user', content: prompt }
+    ], 0.2, 300000, { jsonMode: true }));
+  }
+
+  // Au-delà, la transcription est résumée par parties (LLM de l'entreprise à mémoire de travail
+  // limitée : un texte trop long y est tronqué sans avertissement, souvent par le début).
+  const LOCAL_PART_CHARS = 40000;
+
+  /** Lignes numérotées de la transcription (#1, #2…), utilisées pour les références de la synthèse. */
+  function numberedLines(transcription, multi) {
+    return transcription.map((it, i) => ({
+      track: it.file_index || 1,
+      line: `#${i + 1} ` + (multi ? `[Piste ${it.file_index || 1} • ${it.timestamp || '00:00'}]` : `[${it.timestamp || '00:00'}]`) + ` ${it.speaker || 'Orateur'}: ${it.text || ''}`
+    }));
+  }
+
+  /** Parties d'au plus LOCAL_PART_CHARS caractères, sans jamais mélanger deux pistes. */
+  function splitParts(lines) {
+    const parts = [];
+    for (const l of lines) {
+      const cur = parts[parts.length - 1];
+      if (cur && cur.track === l.track && cur.size + l.line.length < LOCAL_PART_CHARS) { cur.lines.push(l.line); cur.size += l.line.length + 1; }
+      else parts.push({ track: l.track, lines: [l.line], size: l.line.length });
+    }
+    return parts;
+  }
+
+  /**
+   * Synthèse consolidée à partir de la transcription complète de toutes les pistes.
+   * Transcription longue et LLM de l'entreprise : synthèse de chaque partie, puis consolidation.
+   */
+  async function summarizeTranscript(transcription, audioFiles, cfg, ctx) {
+    const multi = audioFiles.length > 1;
+    const filesDesc = audioFiles.map((a, i) => `piste ${i + 1} : '${a.name}'`).join(', ');
+    const coverage = multi
+      ? `\n\nLa réunion comporte ${audioFiles.length} pistes audio (${filesDesc}). La synthèse doit couvrir TOUTES les pistes, de façon consolidée : n'omets aucun sujet, décision ni action, quelle que soit la piste où il apparaît.`
+      : '';
+    const context = seriesHint(ctx) + followupHint(ctx) + dateHint(ctx);
+    const lines = numberedLines(transcription, multi);
+    const total = lines.reduce((n, l) => n + l.line.length + 1, 0);
+    const schema = `{
+  "title": "Titre clair et représentatif de la session ou du sujet principal",
+  "language": "fr",
+  "summary": ${SUMMARY_SCHEMA(multi ? "consolidé de l'ensemble des pistes " : "de l'échange ou de la note ")}
+}`;
+
+    if (cfg.provider === 'gemini' || total <= LOCAL_PART_CHARS) {
+      const prompt = `Tu es l'analyste IA d'un dictaphone intelligent.
+Voici la transcription complète de ${audioFiles.length} enregistrement(s) (${filesDesc}) :
+
+"""${lines.map(l => l.line).join('\n')}"""
+
+Analyse attentivement cette transcription et génère une synthèse consolidée et structurée.${coverage}
+Tu dois répondre EXCLUSIVEMENT avec un objet JSON valide (sans aucun commentaire, sans bloc markdown superflu) respectant exactement cette structure :
+
+${schema}
+
+Chaque ligne de la transcription commence par son numéro (#1, #2...). ${REFS_RULE}`;
+      return askJson(cfg, prompt + context);
+    }
+
+    // Transcription trop longue pour le LLM de l'entreprise : synthèse par parties, puis consolidation
+    const parts = splitParts(lines);
+    const partials = [];
+    for (let k = 0; k < parts.length; k++) {
+      const p = parts[k];
+      const af = audioFiles[p.track - 1] || {};
+      const partial = await askJson(cfg, `Tu es l'analyste IA d'un dictaphone intelligent.
+Voici la partie ${k + 1} sur ${parts.length} de la transcription d'une réunion (piste ${p.track} : '${af.name || ''}') :
+
+"""${p.lines.join('\n')}"""
+
+Résume CETTE partie sans rien omettre d'important (sujets, décisions, actions avec responsables et échéances). Réponds EXCLUSIVEMENT avec un objet JSON valide :
+{"summary": ${SUMMARY_SCHEMA('de cette partie ')}}
+
+Chaque ligne commence par son numéro (#n) : utilise ces numéros dans les "refs".` + context);
+      partials.push({ partie: k + 1, piste: p.track, fichier: af.name || '', synthese: partial.summary || partial });
+    }
+    return askJson(cfg, `Tu es l'analyste IA d'un dictaphone intelligent.
+La transcription d'une réunion (${filesDesc}) était trop longue pour être analysée d'un seul tenant : elle a été résumée en ${parts.length} parties, dans l'ordre chronologique de chaque piste. Voici ces synthèses partielles (JSON) :
+
+${JSON.stringify(partials)}
+
+Produis la synthèse finale, consolidée et sans doublons, de TOUTE la réunion : reprends tous les sujets, décisions et actions de toutes les parties.${coverage}
+Conserve les numéros de "refs" des synthèses partielles (ils désignent les lignes de la transcription complète).
+Tu dois répondre EXCLUSIVEMENT avec un objet JSON valide respectant exactement cette structure :
+
+${schema}` + context);
   }
 
   async function processRecording(audioFiles, cfg, ctx) {
-    if (cfg.provider === 'gemini') return processWithGemini(audioFiles, cfg, ctx);
-    if (cfg.local_stt_mode === 'cloud') { // mode Hybride, choisi explicitement : transcription par Gemini
-      const transcription = await transcribeWithGemini(audioFiles, cfg, ctx);
-      return summarizeWithLocalLLM(transcription, audioFiles, cfg, ctx);
+    // Une seule piste avec Gemini : transcription et synthèse en une requête
+    if (cfg.provider === 'gemini' && audioFiles.length === 1) return processWithGemini(audioFiles, cfg, ctx);
+    // Plusieurs pistes, Hybride ou 100 % sur site : chaque piste est transcrite séparément, puis la
+    // synthèse est faite sur la transcription complète (aucune piste ne peut être laissée de côté)
+    const transcription = await transcribeTracks(audioFiles, cfg, ctx);
+    const fallbackTitle = audioFiles.length ? stripName(audioFiles[0].name) : 'Session analysée';
+    let parsed;
+    try {
+      parsed = await summarizeTranscript(transcription, audioFiles, cfg, ctx);
+    } catch (err) {
+      if (cfg.provider === 'gemini' || /HTTP|accès refusé|Délai|fetch|network/i.test(err.message)) throw err;
+      // LLM de l'entreprise : réponse non JSON → transcription conservée, synthèse minimale
+      console.warn('[LLM local] Réponse non standard :', err);
+      const { model } = localChatUrl(cfg);
+      parsed = {
+        summary: {
+          executive: `Analyse réalisée par le modèle local (${model}). Consultez la transcription détaillée.`,
+          key_points: ["Transcription complète disponible dans l'onglet Transcription."],
+          decisions: [], action_items: [], tags: ['LocalLLM', model]
+        }
+      };
     }
-    const sttUrl = (cfg.on_prem_stt_url || 'http://localhost:8000/v1').replace(/\/+$/, '');
-    const transcription = [];
-    for (let i = 0; i < audioFiles.length; i++) {
-      transcription.push({
-        file_index: i + 1,
-        file_name: audioFiles[i].name,
-        speaker: `Orateur (Piste ${i + 1})`,
-        timestamp: '00:00',
-        text: await transcribeWhisperLocal(audioFiles[i], sttUrl, cfg.on_prem_stt_model, sttApiKey(cfg, sttUrl))
-      });
-    }
-    return summarizeWithLocalLLM(transcription, audioFiles, cfg, ctx);
+    return { ...parsed, title: parsed.title || fallbackTitle, language: parsed.language || 'fr', transcription };
   }
 
   const EMAIL_RULE = `Lorsqu'on te demande de rédiger un e-mail, réponds UNIQUEMENT avec l'e-mail : une première ligne « Objet : … », une ligne vide, puis le corps du message (formule d'appel, contenu, formule de politesse), sans commentaire avant ni après.`;
@@ -591,16 +710,19 @@ Le bloc contient la synthèse COMPLÈTE corrigée : reprends à l'identique tout
         ...history.map(h => ({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.content }] })),
         { role: 'user', parts: [{ text: userMsg }] }
       ];
-      const { text } = await geminiGenerate(cfg, { contents },
+      const { text, truncated } = await geminiGenerate(cfg, { contents },
         ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'], 60000);
-      return text;
+      return truncated ? text + TRUNCATED_NOTE : text;
     }
-    return localChat(cfg, [
+    const { text, truncated } = await localChat(cfg, [
       { role: 'system', content: system },
       ...history.map(h => ({ role: h.role, content: h.content })),
       { role: 'user', content: userMsg }
-    ], 0.3, 180000);
+    ], 0.3, 180000, { meta: true });
+    return truncated ? text + TRUNCATED_NOTE : text;
   }
+
+  const TRUNCATED_NOTE = '\n\n⚠️ Réponse interrompue : le modèle a atteint sa limite de longueur. Demandez « continue » pour la suite, ou une réponse plus courte.';
 
   async function chatWithRecording(userMsg, rec, history, cfg) {
     const system = `Tu es l'assistant personnel de ce dictaphone.
