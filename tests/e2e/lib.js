@@ -82,7 +82,7 @@ const ANALYSIS = {
 
 /**
  * Simulateur Gemini. analysis(body, n) → objet d'analyse (n = numéro de l'analyse) ;
- * chat(text, body) → réponse texte de l'assistant. Les requêtes sont journalisées.
+ * chat(text, body) → réponse texte de l'assistant, ou { parts, finishReason } pour une réponse brute. Les requêtes sont journalisées.
  */
 function gemini({ analysis = () => ANALYSIS, chat = () => 'Réponse de test.', status = null } = {}) {
   const g = { analyses: [], chats: [], status };
@@ -101,7 +101,9 @@ function gemini({ analysis = () => ANALYSIS, chat = () => 'Réponse de test.', s
       const parts = (body.contents || []).flatMap(c => c.parts || []).map(p => p.text || '');
       text = chat(parts[parts.length - 1] || '', body, g.chats.length - 1);
     }
-    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ candidates: [{ content: { parts: [{ text }] } }] }) });
+    // Réponse brute possible : { parts: [...], finishReason } (réponse en plusieurs morceaux, raisonnement, coupure…)
+    const candidate = text && typeof text === 'object' ? { content: { parts: text.parts }, finishReason: text.finishReason || 'STOP' } : { content: { parts: [{ text }] }, finishReason: 'STOP' };
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ candidates: [candidate] }) });
   };
   return g;
 }
@@ -120,11 +122,13 @@ function llmServer({ models = ['gpt-oss-120b', 'mistral-small'], summary = null,
     if (url.pathname.endsWith('/models')) return send({ data: models.map(id => ({ id })) });
     if (url.pathname.endsWith('/chat/completions')) {
       const body = JSON.parse(req.postData() || '{}');
-      const all = (body.messages || []).map(m => String(m.content)).join('\n');
-      const content = all.includes('"summary"')
+      // Analyse (synthèse) : réponse JSON demandée ; sinon, conversation avec l'assistant
+      const content = body.response_format
         ? JSON.stringify(summary || { title: 'Réunion sur site', summary: { executive: 'Synthèse produite sur site.', decisions: [{ text: 'Rien ne sort de l’entreprise' }], key_points: [], tags: ['SurSite'], action_items: [{ task: 'Valider l’installation', assignee: 'Alice', deadline: 'À définir' }] } })
         : reply(body);
-      return send({ choices: [{ message: { content } }] });
+      // reply() peut renvoyer { content, finish_reason } (réponse coupée par la limite du serveur…)
+      const r = content && typeof content === 'object' ? content : { content, finish_reason: 'stop' };
+      return send({ choices: [{ message: { content: r.content }, finish_reason: r.finish_reason }] });
     }
     return send({ error: 'inconnu' }, 404);
   };

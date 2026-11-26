@@ -235,6 +235,23 @@
   const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   /**
+   * Texte complet d'une réponse Gemini : tous les morceaux (« parts ») mis bout à bout, sans le
+   * raisonnement du modèle (parts « thought »). Une réponse longue arrive souvent en plusieurs
+   * morceaux : n'en lire que le premier la coupait en plein mot.
+   */
+  function geminiText(data) {
+    const cand = data && data.candidates && data.candidates[0];
+    const parts = (cand && cand.content && cand.content.parts) || [];
+    const text = parts.filter(p => p && !p.thought && typeof p.text === 'string').map(p => p.text).join('');
+    const finish = (cand && cand.finishReason) || '';
+    if (!text.trim()) {
+      const reason = (data && data.promptFeedback && data.promptFeedback.blockReason) || finish || 'réponse vide';
+      throw Object.assign(new Error(`Gemini n'a renvoyé aucune réponse (${reason}). Reformulez la demande ou réessayez.`), { fatal: true });
+    }
+    return { text, truncated: finish === 'MAX_TOKENS' };
+  }
+
+  /**
    * Appelle Gemini en essayant les modèles de secours en cas de 503/429/404.
    * Si tous les modèles sont saturés (503/429), refait un tour après une pause.
    */
@@ -262,8 +279,7 @@
             if ([503, 429, 404].includes(res.status) || !strict) continue;
             throw Object.assign(new Error(lastErr), { fatal: true });
           }
-          const data = await res.json();
-          return { text: data.candidates[0].content.parts[0].text, model: m };
+          return { ...geminiText(await res.json()), model: m };
         } catch (err) {
           if (err.fatal) throw err;
           saturated = false;
@@ -306,7 +322,7 @@
    * jsonMode demande une réponse JSON (response_format) ; si le serveur refuse ce paramètre,
    * la requête est relancée sans.
    */
-  async function localChat(cfg, messages, temperature, timeoutMs, { jsonMode = false } = {}) {
+  async function localChat(cfg, messages, temperature, timeoutMs, { jsonMode = false, meta = false } = {}) {
     const { chat, model } = localChatUrl(cfg);
     const send = (extra) => fetchWithTimeout(chat, {
       method: 'POST',
@@ -323,7 +339,7 @@
     const msg = (data.choices && data.choices[0] && data.choices[0].message) || {};
     const content = stripReasoning(msg.content || '');
     if (!content) throw new Error('réponse vide du modèle (augmentez la limite de tokens du serveur ?)');
-    return content;
+    return meta ? { text: content, truncated: data.choices[0].finish_reason === 'length' } : content;
   }
 
   /** Retire un éventuel raisonnement visible (balises <think>, canaux « harmony » de gpt-oss). */
@@ -591,16 +607,19 @@ Le bloc contient la synthèse COMPLÈTE corrigée : reprends à l'identique tout
         ...history.map(h => ({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.content }] })),
         { role: 'user', parts: [{ text: userMsg }] }
       ];
-      const { text } = await geminiGenerate(cfg, { contents },
+      const { text, truncated } = await geminiGenerate(cfg, { contents },
         ['gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'], 60000);
-      return text;
+      return truncated ? text + TRUNCATED_NOTE : text;
     }
-    return localChat(cfg, [
+    const { text, truncated } = await localChat(cfg, [
       { role: 'system', content: system },
       ...history.map(h => ({ role: h.role, content: h.content })),
       { role: 'user', content: userMsg }
-    ], 0.3, 180000);
+    ], 0.3, 180000, { meta: true });
+    return truncated ? text + TRUNCATED_NOTE : text;
   }
+
+  const TRUNCATED_NOTE = '\n\n⚠️ Réponse interrompue : le modèle a atteint sa limite de longueur. Demandez « continue » pour la suite, ou une réponse plus courte.';
 
   async function chatWithRecording(userMsg, rec, history, cfg) {
     const system = `Tu es l'assistant personnel de ce dictaphone.
