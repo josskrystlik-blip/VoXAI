@@ -59,6 +59,7 @@ check "X-Frame-Options: DENY"                      'grep -qi "^x-frame-options: 
 check "X-Content-Type-Options: nosniff"            'grep -qi "^x-content-type-options: nosniff" <<<"$H"'
 check "Referrer-Policy: no-referrer"               'grep -qi "^referrer-policy: no-referrer" <<<"$H"'
 check "Permissions-Policy : caméra et position refusées" 'grep -qi "^permissions-policy:.*camera=().*geolocation=()" <<<"$H"'
+check "Permissions-Policy : son d'une visio capturable (display-capture)" 'grep -qi "^permissions-policy:.*display-capture=(self)" <<<"$H"'
 check "Version de nginx masquée"                   '! grep -qiE "^server: nginx/[0-9]" <<<"$H"'
 H2="$(curl -sI "http://127.0.0.1:$PORT_APP/app.js")"
 check "En-têtes aussi présents sur les fichiers JS" 'grep -qi "^content-security-policy:" <<<"$H2" && grep -qi "^x-frame-options:" <<<"$H2"'

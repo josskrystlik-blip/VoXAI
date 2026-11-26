@@ -8,7 +8,7 @@
  * - Aucune autre requête n'est interceptée : appels à l'IA, à Confluence (y compris le relais
  *   /confluence/) et données (IndexedDB) ne passent jamais par ce cache.
  */
-const VERSION = 'v1.12.5';
+const VERSION = 'v1.12.6';
 const CACHE = `voxai-${VERSION}`;
 const APP_FILES = [
   './', 'index.html', 'theme-init.js', 'db.js', 'app.js', 'series.js', 'live.js', 'confluence.js', 'onboarding.js',

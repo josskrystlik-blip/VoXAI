@@ -483,22 +483,131 @@ function drawIdleWaveform() {
   ctx.stroke();
 }
 
+// ------------------------------------------------------------------------------
+// Source audio : micro seul, ou micro + son de la visioconférence (Meet, Teams, Zoom sur ce poste).
+// Le son de la réunion est capté par la fenêtre « Partager » du navigateur (getDisplayMedia), puis
+// mélangé au micro dans une seule piste : la transcription garde l'ordre chronologique.
+// ------------------------------------------------------------------------------
+const CAPTURE_KEY = 'voxai_capture_source';
+
+/** Capture du son d'un onglet ou du système : Chrome et Edge uniquement (ni Firefox ni Safari). */
+function meetingCaptureReason() {
+  if (!navigator.mediaDevices || typeof navigator.mediaDevices.getDisplayMedia !== 'function') return 'Non disponible dans ce navigateur : utilisez Chrome ou Edge.';
+  if (!/Chrome\/|Edg\//.test(navigator.userAgent)) return 'Le son d’une visio ne peut être capté qu’avec Chrome ou Edge.';
+  return '';
+}
+
+function captureSource() {
+  if (meetingCaptureReason()) return 'mic';
+  try { return localStorage.getItem(CAPTURE_KEY) === 'meeting' ? 'meeting' : 'mic'; } catch { return 'mic'; }
+}
+
+function refreshCaptureUI() {
+  const reason = meetingCaptureReason();
+  const meetingRadio = document.querySelector('input[name="captureSource"][value="meeting"]');
+  if (!meetingRadio) return;
+  meetingRadio.disabled = !!reason;
+  const mode = captureSource();
+  document.querySelector(`input[name="captureSource"][value="${mode}"]`).checked = true;
+  const hint = document.getElementById('captureHint');
+  hint.textContent = reason
+    ? `🎧 ${reason}`
+    : mode === 'meeting'
+      ? 'Au démarrage, choisissez l’onglet de la réunion (ou l’écran entier) et cochez « Partager l’audio ». Les voix des participants à distance seront enregistrées.'
+      : 'Le micro seul ne capte pas les participants à distance d’une visio suivie au casque : choisissez « Micro + son de la visio ».';
+}
+
+/** Son de la réunion : fenêtre « Partager » du navigateur (onglet de la visio ou écran entier). */
+async function acquireMeeting() {
+  const stream = await navigator.mediaDevices.getDisplayMedia({
+    video: true, // exigé par Chrome ; l'image n'est ni enregistrée ni envoyée
+    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    systemAudio: 'include',
+    selfBrowserSurface: 'exclude',
+    surfaceSwitching: 'include'
+  });
+  stream.getVideoTracks().forEach(t => { t.enabled = false; });
+  if (!stream.getAudioTracks().length) {
+    stream.getTracks().forEach(t => t.stop());
+    throw Object.assign(new Error('Aucun son partagé'), { code: 'NO_AUDIO' });
+  }
+  return stream;
+}
+
+function onMeetingEnded() {
+  if (!state.isRecording || state.meetingEnded) return;
+  state.meetingEnded = true;
+  if (state.meetingStream) state.meetingStream.getTracks().forEach(t => t.stop());
+  document.getElementById('levelMeeting').style.width = '0%';
+  showToast('Partage du son de la visio arrêté : l’enregistrement continue avec le micro seul.', '🎧');
+}
+
 async function startRecording() {
+  if (state.isStarting || state.isRecording) return;
+  state.isStarting = true;
+  const mode = captureSource();
+  // Contexte audio créé tout de suite (clic de l'utilisateur) : après la fenêtre « Partager »,
+  // le navigateur pourrait le laisser en veille et l'enregistrement serait muet
+  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  let mic = null;
+  let meeting = null;
   try {
-    state.audioStream = await navigator.mediaDevices.getUserMedia({
+    mic = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true
       }
     });
+    if (mode === 'meeting') {
+      try {
+        meeting = await acquireMeeting();
+      } catch (err) {
+        mic.getTracks().forEach(t => t.stop());
+        audioContext.close();
+        if (err.code === 'NO_AUDIO') {
+          showToast('Aucun son partagé : relancez et cochez « Partager l’audio » (onglet de la visio ou écran entier), ou choisissez « Micro seul ».', '🎧');
+        } else if (err.name === 'NotAllowedError' || err.name === 'AbortError') {
+          showToast('Partage annulé : enregistrement non démarré.', 'ℹ️');
+        } else {
+          showToast('Impossible de capter le son de la visio : ' + err.message, '⚠️');
+        }
+        return;
+      }
+    }
+    if (audioContext.state === 'suspended') await audioContext.resume().catch(() => {});
 
-    // Web Audio Setup for Waveform
-    state.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const source = state.audioContext.createMediaStreamSource(state.audioStream);
-    state.analyser = state.audioContext.createAnalyser();
+    state.audioStream = mic;
+    state.meetingStream = meeting;
+    state.meetingEnded = false;
+    state.recordSource = meeting ? 'visio' : 'micro';
+    state.audioContext = audioContext;
+    const micSource = audioContext.createMediaStreamSource(mic);
+    state.analyser = audioContext.createAnalyser();
     state.analyser.fftSize = 256;
-    source.connect(state.analyser);
+    let recordStream = mic;
+    if (meeting) {
+      // Mixage micro + réunion dans une seule piste, compresseur contre la saturation
+      const meetingSource = audioContext.createMediaStreamSource(new MediaStream(meeting.getAudioTracks()));
+      const compressor = audioContext.createDynamicsCompressor();
+      const destination = audioContext.createMediaStreamDestination();
+      state.levelMic = audioContext.createAnalyser();
+      state.levelMeeting = audioContext.createAnalyser();
+      state.levelMic.fftSize = state.levelMeeting.fftSize = 512;
+      micSource.connect(state.levelMic);
+      meetingSource.connect(state.levelMeeting);
+      micSource.connect(compressor);
+      meetingSource.connect(compressor);
+      compressor.connect(destination);
+      compressor.connect(state.analyser);
+      recordStream = destination.stream;
+      meeting.getTracks().forEach(t => t.addEventListener('ended', onMeetingEnded));
+      state.meetingHeard = false;
+      state.meetingWarned = false;
+      document.getElementById('captureLevels').classList.remove('hidden');
+    } else {
+      micSource.connect(state.analyser);
+    }
 
     // MediaRecorder Setup
     let mimeType = 'audio/webm;codecs=opus';
@@ -507,7 +616,7 @@ async function startRecording() {
       else mimeType = ''; // par défaut du navigateur
     }
 
-    state.mediaRecorder = mimeType ? new MediaRecorder(state.audioStream, { mimeType }) : new MediaRecorder(state.audioStream);
+    state.mediaRecorder = mimeType ? new MediaRecorder(recordStream, { mimeType }) : new MediaRecorder(recordStream);
     state.audioChunks = [];
 
     state.mediaRecorder.ondataavailable = (e) => {
@@ -532,7 +641,10 @@ async function startRecording() {
     elements.pauseRecordBtn.classList.remove('hidden');
     elements.cancelRecordBtn.classList.remove('hidden');
     elements.micPrompt.classList.add('hidden');
-    elements.recordStatusText.textContent = 'Enregistrement en cours... Cliquez pour terminer et analyser';
+    document.querySelectorAll('input[name="captureSource"]').forEach(r => { r.disabled = true; });
+    elements.recordStatusText.textContent = meeting
+      ? 'Enregistrement de la visio en cours (micro + son de la réunion)... Cliquez pour terminer et analyser'
+      : 'Enregistrement en cours... Cliquez pour terminer et analyser';
     elements.recordStatusText.className = 'text-xs text-rose-400 font-medium animate-pulse';
 
     // Start Timer
@@ -540,6 +652,11 @@ async function startRecording() {
       if (!state.isPaused) {
         state.recordElapsedSec++;
         elements.recordTimer.textContent = formatDuration(state.recordElapsedSec);
+        // Réunion muette depuis 10 s : son probablement non partagé (onglet ou case « Partager l'audio »)
+        if (state.levelMeeting && !state.meetingHeard && !state.meetingWarned && !state.meetingEnded && state.recordElapsedSec >= 10) {
+          state.meetingWarned = true;
+          showToast('Aucun son de la réunion depuis 10 s : avez-vous partagé le bon onglet (ou l’écran entier) avec « Partager l’audio » ?', '🎧');
+        }
       }
     }, 1000);
 
@@ -551,8 +668,22 @@ async function startRecording() {
 
   } catch (err) {
     console.error('Erreur accès micro:', err);
+    if (mic) mic.getTracks().forEach(t => t.stop());
+    if (meeting) meeting.getTracks().forEach(t => t.stop());
+    if (audioContext.state !== 'closed') audioContext.close();
     showToast("Impossible d'accéder au microphone : " + err.message, '⚠️');
+  } finally {
+    state.isStarting = false;
   }
+}
+
+/** Niveau sonore (0 à 1) d'une source, d'après la forme du signal. */
+function sourceLevel(analyser) {
+  const data = new Uint8Array(analyser.fftSize);
+  analyser.getByteTimeDomainData(data);
+  let sum = 0;
+  for (let i = 0; i < data.length; i++) { const v = (data[i] - 128) / 128; sum += v * v; }
+  return Math.min(1, Math.sqrt(sum / data.length) * 4);
 }
 
 function visualizeWaveform() {
@@ -590,6 +721,15 @@ function visualizeWaveform() {
     ctx.beginPath();
     ctx.roundRect(x, y, barWidth, barHeight, 2);
     ctx.fill();
+  }
+
+  // Visio : niveaux « Vous » et « Réunion »
+  if (state.levelMic && state.levelMeeting) {
+    const micLevel = sourceLevel(state.levelMic);
+    const meetingLevel = state.meetingEnded ? 0 : sourceLevel(state.levelMeeting);
+    if (meetingLevel > 0.02) state.meetingHeard = true;
+    document.getElementById('levelMic').style.width = `${Math.round(micLevel * 100)}%`;
+    document.getElementById('levelMeeting').style.width = `${Math.round(meetingLevel * 100)}%`;
   }
 
   state.animFrameId = requestAnimationFrame(visualizeWaveform);
@@ -647,6 +787,11 @@ function cleanUpRecordingStreams() {
   if (state.audioStream) {
     state.audioStream.getTracks().forEach(track => track.stop());
   }
+  if (state.meetingStream) {
+    state.meetingStream.getTracks().forEach(track => track.stop());
+    state.meetingStream = null;
+  }
+  state.levelMic = state.levelMeeting = null;
   if (state.audioContext && state.audioContext.state !== 'closed') {
     state.audioContext.close();
   }
@@ -661,6 +806,10 @@ function resetRecorderUI() {
   elements.micPrompt.classList.remove('hidden');
   elements.recordTimer.textContent = '00:00';
   elements.recordStatusText.textContent = 'Prêt à enregistrer';
+  document.getElementById('captureLevels').classList.add('hidden');
+  ['levelMic', 'levelMeeting'].forEach(id => { document.getElementById(id).style.width = '0%'; });
+  document.querySelectorAll('input[name="captureSource"]').forEach(r => { r.disabled = false; });
+  refreshCaptureUI();
   elements.recordStatusText.className = 'text-xs text-slate-400 font-medium';
   drawIdleWaveform();
 }
@@ -689,10 +838,10 @@ async function handleRecordingStopped() {
   if (window.VoxLive) VoxLive.reset();
   elements.recordTitleInput.value = '';
 
-  await uploadAndProcessAudio(audioBlob, customTitle, duration, mimeType, liveText);
+  await uploadAndProcessAudio(audioBlob, customTitle, duration, mimeType, liveText, state.recordSource);
 }
 
-async function uploadAndProcessAudio(blob, title, duration, mimeType, liveText = '') {
+async function uploadAndProcessAudio(blob, title, duration, mimeType, liveText = '', source = '') {
   showToast('Enregistrement de l’audio en local...', '⏳');
 
   try {
@@ -702,7 +851,8 @@ async function uploadAndProcessAudio(blob, title, duration, mimeType, liveText =
         'Content-Type': mimeType,
         'X-Audio-Duration': duration.toString(),
         'X-Audio-Title': encodeURIComponent(title),
-        'X-Series-Id': (window.VoxSeries && VoxSeries.selectedId()) || ''
+        'X-Series-Id': (window.VoxSeries && VoxSeries.selectedId()) || '',
+        'X-Audio-Source': source || ''
       },
       body: blob
     });
@@ -2463,6 +2613,11 @@ function setupEventListeners() {
   });
 
   elements.pauseRecordBtn.addEventListener('click', pauseRecording);
+  document.querySelectorAll('input[name="captureSource"]').forEach(r => r.addEventListener('change', () => {
+    try { localStorage.setItem(CAPTURE_KEY, r.value); } catch { /* stockage indisponible */ }
+    refreshCaptureUI();
+  }));
+  refreshCaptureUI();
   elements.cancelRecordBtn.addEventListener('click', cancelRecording);
 
   // New Recording & Switch back to Recorder
