@@ -13,6 +13,17 @@ const { AUDIO, ANALYSIS, startServer, createRunner, assert, launchBrowser, gemin
 
 const CONFIG = { provider: 'gemini', gemini_api_key: 'cle-test' };
 const clip = (page) => page.evaluate(() => navigator.clipboard.readText());
+
+/** Fichier audio enregistré (lu dans IndexedDB) : taille, type, en-tête MP3, durée décodée. */
+function stored(page, recId) {
+  return page.evaluate(async (id) => {
+    const db = await new Promise((ok, ko) => { const r = indexedDB.open('voxai'); r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error); });
+    const files = await new Promise((ok, ko) => { const r = db.transaction('files').objectStore('files').index('recording_id').getAll(id); r.onsuccess = () => ok(r.result); r.onerror = () => ko(r.error); });
+    const bytes = new Uint8Array(await files[0].blob.arrayBuffer());
+    const audio = await new AudioContext().decodeAudioData(bytes.buffer.slice(0));
+    return { size: bytes.length, type: files[0].blob.type, frameSync: bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0, duration: audio.duration };
+  }, recId);
+}
 const wav = fs.readFileSync(AUDIO);
 
 (async () => {
@@ -48,7 +59,13 @@ const wav = fs.readFileSync(AUDIO);
     assert(g.analyses.length === 1, 'une seule analyse');
     assert(rec.file_size > 1000, `audio enregistré trop petit : ${rec.file_size} octets`);
     const part = g.analyses[0].contents[0].parts.find(p => p.inline_data);
-    assert(/^audio\/(webm|mp4)/.test(part.inline_data.mime_type) && part.inline_data.data.length > 1000, 'audio non transmis à l’analyse');
+    assert(part.inline_data.mime_type === 'audio/mp3' && part.inline_data.data.length > 1000, `audio transmis à l’analyse : ${part.inline_data.mime_type}`);
+    // Enregistrement en MP3 : format, débit (48 kbit/s), durée sans les pauses
+    const mp3 = await stored(page, rec.id);
+    assert(rec.mime_type === 'audio/mpeg' && /\.mp3$/.test(rec.filename), `format : ${rec.mime_type} ${rec.filename}`);
+    assert(mp3.frameSync, 'fichier non MP3 (pas d’en-tête de trame)');
+    assert(mp3.size < rec.duration * 6000 + 4000, `MP3 trop lourd : ${mp3.size} octets pour ${rec.duration} s`);
+    assert(Math.abs(mp3.duration - rec.duration) < 1.6, `durée du MP3 : ${mp3.duration.toFixed(1)} s (enregistrement : ${rec.duration} s)`);
     assert((await page.textContent('#summaryExecutive')).includes(ANALYSIS.summary.executive), 'synthèse non affichée');
     assert(await page.textContent('#detailStatusBadge') === 'Analysé par IA', 'badge de statut');
     assert(await page.textContent('#recordTimer') === '00:00' && await page.inputValue('#recordTitleInput') === '', 'dictaphone non réinitialisé');
@@ -74,6 +91,21 @@ const wav = fs.readFileSync(AUDIO);
     await page.click('#mainRecordBtn');
     await waitAnalysed(page);
     assert(await page.evaluate(() => state.recordings.length) === 1, 'enregistrement suivant');
+    await context.close();
+  });
+
+  await t.scenario('Encodage MP3 indisponible : l’enregistrement est conservé en WebM', async () => {
+    const g = gemini();
+    const { context, page } = await openApp(browser, base, { gemini: g, config: CONFIG });
+    await page.evaluate(() => { VoxMp3.startCapture = () => Promise.reject(new Error('AudioWorklet non disponible')); });
+    await page.click('#mainRecordBtn');
+    await page.waitForFunction(() => state.isRecording);
+    await page.waitForTimeout(2200);
+    await page.click('#mainRecordBtn');
+    await waitAnalysed(page);
+    const rec = await page.evaluate(() => state.activeRecording);
+    assert(/^audio\/webm/.test(rec.mime_type) && /\.webm$/.test(rec.filename) && rec.file_size > 1000, `secours WebM : ${rec.mime_type} ${rec.filename}`);
+    assert(page.jsErrors.length === 0, `erreurs : ${page.jsErrors}`);
     await context.close();
   });
 

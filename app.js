@@ -152,6 +152,7 @@ async function init() {
   // Les modules (transcription en direct…) attendent la configuration et la politique de l'administrateur
   document.dispatchEvent(new CustomEvent('voxai:config-loaded'));
   await loadRecordings();
+  setupSidebar();
   setupEventListeners();
   setupOffline();
   setupPwa();
@@ -167,6 +168,61 @@ async function init() {
       showToast('Bienvenue ! Configurez votre clé d’API Gemini pour démarrer.', '✨');
     }, 600);
   }
+}
+
+// ==============================================================================
+// Liste des enregistrements : tiroir sur mobile, colonne repliable sur ordinateur
+// ==============================================================================
+
+const SIDEBAR_KEY = 'voxai_sidebar_collapsed';
+const mobileLayout = window.matchMedia('(max-width: 767px)');
+
+function syncSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const toggle = document.getElementById('sidebarToggle');
+  const mobile = mobileLayout.matches;
+  const shown = mobile ? document.body.classList.contains('sidebar-open') : !document.body.classList.contains('sidebar-collapsed');
+  toggle.setAttribute('aria-expanded', String(shown));
+  toggle.title = shown ? 'Masquer la liste des enregistrements' : 'Afficher la liste des enregistrements';
+  document.getElementById('sidebarScrim').hidden = !(mobile && shown);
+  // Tiroir fermé : hors de portée du clavier et des lecteurs d'écran
+  sidebar.inert = mobile && !shown;
+}
+
+function openDrawer() {
+  document.body.classList.add('sidebar-open');
+  syncSidebar();
+  setTimeout(() => { const first = document.querySelector('#sidebar button:not([hidden])'); if (first) first.focus(); }, 50);
+}
+
+/** Ferme le tiroir (mobile) ; `restoreFocus` : retour sur le bouton qui l'a ouvert. */
+function closeDrawer(restoreFocus = false) {
+  if (!document.body.classList.contains('sidebar-open')) return;
+  document.body.classList.remove('sidebar-open');
+  syncSidebar();
+  if (restoreFocus) document.getElementById('sidebarToggle').focus();
+}
+
+function setupSidebar() {
+  let collapsed = false;
+  try { collapsed = localStorage.getItem(SIDEBAR_KEY) === '1'; } catch { /* stockage indisponible */ }
+  document.body.classList.toggle('sidebar-collapsed', collapsed);
+  document.getElementById('sidebarToggle').addEventListener('click', () => {
+    if (mobileLayout.matches) {
+      if (document.body.classList.contains('sidebar-open')) closeDrawer(true); else openDrawer();
+      return;
+    }
+    const now = !document.body.classList.contains('sidebar-collapsed');
+    document.body.classList.toggle('sidebar-collapsed', now);
+    try { localStorage.setItem(SIDEBAR_KEY, now ? '1' : '0'); } catch { /* stockage indisponible */ }
+    syncSidebar();
+    initCanvas(); // largeur de la forme d'onde
+  });
+  document.getElementById('sidebarClose').addEventListener('click', () => closeDrawer(true));
+  document.getElementById('sidebarScrim').addEventListener('click', () => closeDrawer(true));
+  window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(true); });
+  mobileLayout.addEventListener('change', () => { document.body.classList.remove('sidebar-open'); syncSidebar(); });
+  syncSidebar();
 }
 
 // ==============================================================================
@@ -190,11 +246,13 @@ function updateProviderBadge() {
   if (isGemini) {
     elements.providerDot.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-pulse';
     elements.providerName.textContent = `Cloud (${state.config.gemini_model || 'gemini-3.5-flash-lite'})`;
+    elements.providerBadgeBtn.title = `${elements.providerName.textContent} — paramètres de l'IA`;
   } else {
     const model = state.config.local_llm_model || state.config.on_prem_llm_model || 'Local';
     const hybrid = state.config.local_stt_mode === 'cloud' && !cloudDisabled();
     elements.providerDot.className = `w-2 h-2 rounded-full ${hybrid ? 'bg-amber-400' : 'bg-purple-400'} animate-pulse`;
     elements.providerName.textContent = hybrid ? `LLM local (${model}) + transcription Google` : `🔒 100 % sur site (${model})`;
+    elements.providerBadgeBtn.title = `${elements.providerName.textContent} — paramètres de l'IA`;
   }
 }
 
@@ -586,6 +644,7 @@ async function startRecording() {
     state.analyser = audioContext.createAnalyser();
     state.analyser.fftSize = 256;
     let recordStream = mic;
+    let tap = micSource; // son envoyé à l'encodeur MP3
     if (meeting) {
       // Mixage micro + réunion dans une seule piste, compresseur contre la saturation
       const meetingSource = audioContext.createMediaStreamSource(new MediaStream(meeting.getAudioTracks()));
@@ -601,12 +660,22 @@ async function startRecording() {
       compressor.connect(destination);
       compressor.connect(state.analyser);
       recordStream = destination.stream;
+      tap = compressor;
       meeting.getTracks().forEach(t => t.addEventListener('ended', onMeetingEnded));
       state.meetingHeard = false;
       state.meetingWarned = false;
       document.getElementById('captureLevels').classList.remove('hidden');
     } else {
       micSource.connect(state.analyser);
+    }
+
+    // MP3 encodé au fil de l'eau (format compris par tous les serveurs Whisper, 2 fois plus léger) ;
+    // l'enregistrement WebM ci-dessous ne sert que de secours si l'encodage MP3 échoue
+    state.mp3 = null;
+    state.mp3Pending = null;
+    if (window.VoxMp3 && VoxMp3.supported) {
+      try { state.mp3 = await VoxMp3.startCapture(audioContext, tap, () => state.isPaused); }
+      catch (err) { console.warn('[MP3] encodage indisponible, enregistrement en WebM :', err); }
     }
 
     // MediaRecorder Setup
@@ -766,6 +835,7 @@ function cancelRecording() {
   if (!state.isRecording) return;
   state.audioChunks = [];
   state.recordCancelled = true; // l'arrêt des pistes déclenche encore onstop / un dernier morceau audio
+  if (state.mp3) { state.mp3.cancel(); state.mp3 = null; }
   if (window.VoxLive) VoxLive.cancel();
   cleanUpRecordingStreams();
   resetRecorderUI();
@@ -775,6 +845,9 @@ function cancelRecording() {
 function stopRecording() {
   if (!state.mediaRecorder || !state.isRecording) return;
   state.liveText = window.VoxLive ? VoxLive.stop() : '';
+  // MP3 terminé avant la fermeture du contexte audio (cleanUpRecordingStreams)
+  state.mp3Pending = state.mp3 ? state.mp3.finish() : null;
+  state.mp3 = null;
   state.mediaRecorder.stop();
   cleanUpRecordingStreams();
 }
@@ -825,8 +898,19 @@ async function handleRecordingStopped() {
     return;
   }
 
-  const mimeType = state.mediaRecorder.mimeType || 'audio/webm';
-  const audioBlob = new Blob(state.audioChunks, { type: mimeType });
+  let mimeType = state.mediaRecorder.mimeType || 'audio/webm';
+  let audioBlob = new Blob(state.audioChunks, { type: mimeType });
+  const mp3Pending = state.mp3Pending;
+  state.mp3Pending = null;
+  if (mp3Pending) {
+    try {
+      const mp3 = await mp3Pending;
+      if (mp3 && mp3.size > 0) { audioBlob = mp3; mimeType = 'audio/mpeg'; }
+    } catch (err) {
+      console.warn('[MP3] encodage échoué :', err);
+      showToast('Encodage MP3 impossible : l’enregistrement est conservé au format WebM.', '⚠️');
+    }
+  }
   const duration = state.recordElapsedSec;
   const customTitle = elements.recordTitleInput.value.trim()
     || (window.VoxSeries && VoxSeries.defaultTitle())
@@ -940,6 +1024,12 @@ async function loadRecordings() {
 }
 
 function renderRecordingsList() {
+  const count = document.getElementById('sidebarCount');
+  if (count) {
+    const n = (state.recordings || []).length;
+    count.textContent = n > 99 ? '99+' : String(n);
+    count.classList.toggle('hidden', n === 0);
+  }
   const query = elements.searchRecordings.value.trim();
   const folded = foldWithMap(query).folded; // sans accents ni majuscules, comme dans la transcription
   const list = elements.recordingsList;
@@ -1028,6 +1118,7 @@ async function selectRecording(id) {
     if (!res.ok) throw new Error('Enregistrement introuvable');
     const rec = await res.json();
     state.activeRecording = rec;
+    closeDrawer(); // mobile : l'enregistrement choisi s'affiche en plein écran
 
     // Basculer l'affichage
     elements.recorderView.classList.add('hidden');
@@ -2622,6 +2713,7 @@ function setupEventListeners() {
 
   // New Recording & Switch back to Recorder
   elements.newRecordBtn.addEventListener('click', () => {
+    closeDrawer();
     state.activeRecording = null;
     elements.detailsView.classList.add('hidden');
     elements.recorderView.classList.remove('hidden');
@@ -2635,6 +2727,7 @@ function setupEventListeners() {
   elements.fileUploadInput.addEventListener('change', async (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
+    closeDrawer();
     e.target.value = '';
 
     if (files.length === 1) {

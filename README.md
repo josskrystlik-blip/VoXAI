@@ -232,6 +232,14 @@ La liste des enregistrements se filtre par série ; un enregistrement se rattach
 - **Plan d'action** : les actions cochées sont enregistrées et reprises dans les copies et dans Confluence (tâches terminées).
 - **💾 Sauvegarde** (⚙️ Paramètres) : les données vivent dans le navigateur. Un rappel s'affiche dans la barre latérale après 7 jours sans sauvegarde (« Plus tard » le repousse de 3 jours). **Exporter mes données** crée un fichier `.voxai` (audios, transcriptions, comptes rendus, discussions) ; **Restaurer une sauvegarde** le réimporte ici ou sur un autre poste (les enregistrements déjà présents sont ignorés).
 
+## 🎵 Format des enregistrements : MP3
+
+Le dictaphone enregistre en **MP3** (mono, 48 kbit/s, environ 21 Mo par heure) : le format compris par tous les serveurs Whisper, et environ 60 % plus léger que le WebM produit par le navigateur. L'encodage se fait au fil de l'eau dans le navigateur (encodeur LAME, `vendor/lame`, licence LGPL), sans rien envoyer ailleurs ; si le navigateur ne le permet pas, l'enregistrement est conservé en WebM. Les anciens enregistrements et les fichiers importés en WebM ou Ogg refusés par votre serveur Whisper sont convertis en MP3 automatiquement au moment de l'analyse.
+
+## 📱 Sur mobile
+
+Sur téléphone, le dictaphone occupe tout l'écran ; la liste des enregistrements s'ouvre en tiroir avec le bouton en haut à gauche (avec le nombre d'enregistrements) et se referme d'un geste, avec Échap ou dès qu'un enregistrement est choisi. Sur ordinateur, le même bouton replie la colonne (choix mémorisé).
+
 ## 🎧 Enregistrer une visioconférence (Meet, Teams, Zoom) sur le même poste
 
 Avec un casque, le micro ne capte que votre voix : les participants à distance ne seraient pas dans le compte rendu. Choisissez **🎧 Micro + son de la visio** dans le dictaphone (Chrome ou Edge) : au démarrage, le navigateur demande quoi partager.
@@ -256,6 +264,7 @@ Tests de bout en bout (`tests/e2e/`, lancés par la CI à chaque modification) :
 | Fichier | Parcours couverts |
 | :--- | :--- |
 | `dictaphone` | Micro (pause, reprise, annulation, refus), import de plusieurs pistes, synthèse et transcription (orateurs, recherche, actions), copies et exports, téléchargement de l'audio, sauvegarde / restauration |
+| `mobile` | Téléphone : dictaphone en plein écran, liste en tiroir (ouverture, voile, Échap, fermeture au choix d'un enregistrement), aucun débordement ; ordinateur : colonne repliable et mémorisée |
 | `visio` | Micro + son de la visio mélangés dans une piste (vérifié sur l'audio enregistré), partage sans son, annulé ou arrêté en cours, réunion muette, navigateur sans capture |
 | `pistes` | Sessions à plusieurs pistes : chaque piste transcrite séparément (Gemini ou Whisper avec horodatages), synthèse sur la transcription complète, synthèse par parties d'une longue réunion avec le LLM de l'entreprise, piste vide signalée |
 | `sur-site` | Assistant de démarrage, réglages de l'administrateur (« sans cloud »), paramètres (détection des modèles, test, enregistrement), mode Hybride, serveurs en panne |
@@ -275,6 +284,7 @@ VoXAI/
 ├── live.js      # Transcription en direct (reconnaissance vocale du navigateur)
 ├── series.js    # Séries de réunions (participants, Confluence, e-mail, suivi des actions, brief)
 ├── onboarding.js # Assistant de démarrage (IA, Confluence, première série, bilan de confidentialité)
+├── mp3.js       # Enregistrement et conversion en MP3 (avec pcm-worklet.js et mp3-worker.js)
 ├── style.css    # Styles et animations
 ├── vendor/      # Styles Tailwind et polices générés (npm run build) : aucun CDN
 ├── start.sh     # Serveur statique pour un usage local

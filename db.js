@@ -385,7 +385,8 @@
       if (audioFiles.length > 1) {
         parts.push({ text: `=== ${label} ${i + 1}/${audioFiles.length} : '${af.name}' ===` });
       }
-      parts.push({ inline_data: { mime_type: af.mime_type, data: await blobToBase64(af.blob) } });
+      // Gemini attend « audio/mp3 » pour le MP3
+      parts.push({ inline_data: { mime_type: af.mime_type === 'audio/mpeg' ? 'audio/mp3' : af.mime_type, data: await blobToBase64(af.blob) } });
     }
     return parts;
   }
@@ -557,16 +558,26 @@ Réponds EXCLUSIVEMENT avec un JSON pur respectant cette structure exacte :
 
   /** Transcription d'une piste par le serveur Whisper de l'entreprise, avec horodatages. */
   async function transcribeWhisperLocal(af, sttUrl, sttModel, apiKey) {
+    let blob = af.blob;
+    let filename = af.filename;
     const send = (verbose) => {
       const form = new FormData();
       form.append('model', sttModel || 'whisper-1');
       if (verbose) form.append('response_format', 'verbose_json');
-      form.append('file', af.blob, af.filename);
+      form.append('file', blob, filename);
       // Une piste d'une heure peut demander plusieurs minutes sur un serveur sans GPU
       return fetchWithTimeout(`${sttUrl}/audio/transcriptions`, { method: 'POST', body: form, headers: authHeaders(apiKey) }, 1800000);
     };
     let res = await send(true);
     if (res.status === 400 || res.status === 422) res = await send(false); // serveur sans verbose_json
+    // Format refusé (WebM, Ogg… : anciens enregistrements, fichiers importés) : conversion en MP3, nouvel essai
+    const convertible = !/mpeg|mp3|wav/i.test(af.mime_type || blob.type || '') && window.VoxMp3;
+    if (!res.ok && res.status !== 401 && res.status !== 403 && convertible) {
+      blob = await VoxMp3.fromBlob(af.blob);
+      filename = String(af.filename || 'audio').replace(/\.[a-z0-9]+$/i, '') + '.mp3';
+      res = await send(true);
+      if (res.status === 400 || res.status === 422) res = await send(false);
+    }
     if (!res.ok) throw new Error(`Whisper local (HTTP ${res.status}): ${await res.text()}`);
     const data = await res.json();
     const segments = Array.isArray(data.segments) ? data.segments.filter(s => s && String(s.text || '').trim()) : [];

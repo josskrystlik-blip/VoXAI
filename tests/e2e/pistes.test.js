@@ -207,6 +207,27 @@ const SUMMARY = (executive, refs = [1]) => ({ title: 'Réunion multi-pistes', su
     await context.close();
   });
 
+  await t.scenario('Whisper qui refuse le WebM : fichier converti en MP3 puis renvoyé', async () => {
+    const calls = [];
+    const picky = async (route) => {
+      const req = route.request();
+      if (req.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: CORS });
+      const raw = (req.postDataBuffer() || Buffer.alloc(0)).toString('latin1');
+      const name = (raw.match(/filename="([^"]+)"/) || [])[1] || '';
+      const type = (raw.match(/name="file"; filename="[^"]+"\r\nContent-Type: ([^\r]+)/) || [])[1] || '';
+      calls.push({ name, type, mp3: raw.includes('\r\n\r\n\xff\xfb') || /\r\n\r\n\xff[\xe0-\xff]/.test(raw) });
+      if (!/\.mp3$/.test(name)) return route.fulfill({ status: 400, headers: CORS, contentType: 'application/json', body: '{"error":"Unsupported file format"}' });
+      return route.fulfill({ headers: CORS, contentType: 'application/json', body: JSON.stringify({ text: 'Converti.', segments: [{ start: 0, text: 'Converti.' }] }) });
+    };
+    const l = llm(() => SUMMARY('OK'));
+    const { context, page } = await openApp(browser, base, { config: ON_PREM, servers: { 'whisper.corp.test': picky, 'llm.corp.test': l.handler } });
+    // Ancien enregistrement au format WebM (fichier importé)
+    const rec = await importAudio(page, { name: 'ancien.webm', mimeType: 'audio/webm', buffer: wav });
+    assert(rec.status === 'completed' && rec.transcription[0].text === 'Converti.', `analyse : ${rec.status} ${rec.error_message || ''}`);
+    assert(calls.length === 3 && calls.slice(0, 2).every(c => /\.webm$/.test(c.name)) && calls.slice(2).every(c => /\.mp3$/.test(c.name) && c.type === 'audio/mpeg' && c.mp3), `envois à Whisper : ${JSON.stringify(calls)}`);
+    await context.close();
+  });
+
   await t.scenario('Avancement de l’analyse : étapes, pourcentage, temps écoulé, liste des enregistrements', async () => {
     const pause = (ms) => new Promise(r => setTimeout(r, ms));
     const w = whisper([[{ start: 0, text: 'Salle.' }], [{ start: 0, text: 'Visio.' }]]);

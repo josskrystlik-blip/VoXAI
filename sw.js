@@ -15,6 +15,7 @@ const APP_FILES = [
   'style.css', 'vendor/tailwind.css', 'vendor/fonts.css',
   'vendor/fonts/plus-jakarta-sans-latin-wght-normal.woff2', 'vendor/fonts/plus-jakarta-sans-latin-ext-wght-normal.woff2',
   'vendor/fonts/jetbrains-mono-latin-wght-normal.woff2', 'vendor/fonts/jetbrains-mono-latin-ext-wght-normal.woff2',
+  'mp3.js', 'mp3-worker.js', 'pcm-worklet.js', 'vendor/lame/lamejs.iife.js',
   'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/apple-touch-icon.png'
 ];
 const NETWORK_FIRST = ['voxai-defaults.json', 'confluence-proxy.json'];
