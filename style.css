@@ -728,3 +728,26 @@ mark.search-hit { background: rgba(250, 204, 21, 0.35); color: inherit; border-r
 :root[data-theme="light"] .analysis-step-running { color: #b45309; }
 :root[data-theme="light"] .analysis-step-done { color: #047857; }
 :root[data-theme="light"] .analysis-step-failed { color: #be123c; }
+
+/* Source audio : micro seul / micro + son de la visio */
+.capture-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 1rem; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255, 255, 255, 0.08); }
+.capture-opt { position: relative; cursor: pointer; }
+.capture-opt input { position: absolute; opacity: 0; pointer-events: none; }
+.capture-opt span { display: block; padding: .45rem .5rem; border-radius: .75rem; font-size: 12px; font-weight: 600; color: rgb(148 163 184); text-align: center; transition: background .15s, color .15s; }
+.capture-opt input:checked + span { background: linear-gradient(90deg, #4f46e5, #7c3aed); color: #fff; box-shadow: 0 2px 8px rgba(79, 70, 229, .35); }
+.capture-opt input:focus-visible + span { outline: 2px solid #818cf8; outline-offset: 2px; }
+.capture-opt input:disabled + span { cursor: not-allowed; }
+.capture-opt input:disabled:not(:checked) + span { opacity: .45; }
+.capture-help { text-align: left; font-size: 11px; color: rgb(148 163 184); }
+.capture-help summary { cursor: pointer; color: rgb(165 180 252); font-weight: 600; text-align: center; }
+.capture-help ul { margin-top: .4rem; padding-left: 1.1rem; list-style: disc; display: grid; gap: .25rem; }
+.capture-level { display: flex; align-items: center; gap: .5rem; color: rgb(148 163 184); font-weight: 600; }
+.capture-level-bar { flex: 1; height: 6px; border-radius: 9999px; background: rgba(148, 163, 184, .18); overflow: hidden; }
+.capture-level-fill { display: block; height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, #10b981, #f59e0b); transition: width .08s linear; }
+:root[data-theme="light"] .capture-switch { background: rgba(15, 23, 42, 0.05); border-color: rgba(15, 23, 42, 0.08); }
+:root[data-theme="light"] .capture-opt span { color: #475569; }
+:root[data-theme="light"] .capture-opt input:checked + span { color: #fff; }
+:root[data-theme="light"] .capture-help { color: #475569; }
+:root[data-theme="light"] .capture-help summary { color: #4338ca; }
+:root[data-theme="light"] .capture-level { color: #475569; }
+:root[data-theme="light"] .capture-level-bar { background: rgba(15, 23, 42, .1); }

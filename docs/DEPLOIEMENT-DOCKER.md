@@ -247,7 +247,7 @@ docker compose pull && docker compose up -d
 ## 9. Sécurité
 
 - Aucune donnée ni aucun journal d'accès côté serveur (`access_log off`), version de nginx masquée, fichiers cachés jamais servis, pas de liste de répertoires.
-- En-têtes : CSP stricte (`script-src 'self'`, sans `eval` ni script en ligne), `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer`, `Permissions-Policy` (micro autorisé pour la seule application), `Cross-Origin-Opener-Policy`.
+- En-têtes : CSP stricte (`script-src 'self'`, sans `eval` ni script en ligne), `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy: no-referrer`, `Permissions-Policy` (micro et capture du son d'une visio autorisés pour la seule application ; caméra, position, paiement et USB refusés), `Cross-Origin-Opener-Policy`.
 - Image reconstruite à chaque version avec les correctifs Alpine (`apk upgrade`) et analysée par Trivy en CI (bloquant sur les vulnérabilités critiques corrigeables). La suite `tests/security/docker.sh` vérifie ces protections, dont la restriction réseau du mode 100 % interne.
 - Points à traiter de votre côté : HTTPS et authentification sur le reverse proxy (§6.1), clés partagées (§5.3), filtrage réseau des postes si vous souhaitez une seconde barrière en plus de la CSP.
 
@@ -256,6 +256,7 @@ docker compose pull && docker compose up -d
 | Symptôme | Cause probable | Solution |
 | :--- | :--- | :--- |
 | Le micro ne s'active pas | Page servie en HTTP | Passer en HTTPS (§6.1). |
+| Visio enregistrée sans les participants à distance | Mode « Micro seul », ou son non partagé | Choisir « Micro + son de la visio » dans Chrome ou Edge, puis l'onglet de la réunion (ou l'écran entier) avec « Partager l'audio ». |
 | « Impossible de joindre le modèle local… CORS » | Le LLM refuse l'origine de VoxAI | Servir le LLM sous le même nom (§6.2) ou autoriser l'origine en CORS. |
 | Console : « Refused to connect … Content Security Policy » | Serveur absent de la liste autorisée | Ajouter son origine via `VOXAI_LLM_URL` / `VOXAI_STT_URL`, ou définir `VOXAI_CSP_CONNECT_SRC`. |
 | Test : « le serveur Whisper ne répond pas » | URL sans `/v1`, mauvais modèle, CORS | Vérifier `VOXAI_STT_URL` (ex. `…/v1`) et `VOXAI_STT_MODEL`. |

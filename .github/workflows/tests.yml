@@ -4,6 +4,7 @@ name: Tests fonctionnels
 # simulés (Gemini, LLM et Whisper de l'entreprise, Confluence), un micro simulé et sans Internet :
 #  - dictaphone : micro (pause, reprise, annulation, refus), import multi-pistes, synthèse,
 #                 transcription, copies et exports, sauvegarde / restauration
+#  - visio      : micro + son d'une visioconférence (Meet, Teams, Zoom) sur le même poste
 #  - pistes     : sessions à plusieurs pistes (chaque piste transcrite, synthèse sur toutes les pistes)
 #  - sur-site   : assistant de démarrage, réglages de l'administrateur, paramètres, Hybride, pannes
 #  - series     : séries, suivi des actions, brief, échéances, e-mail aux participants
@@ -26,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [dictaphone, pistes, sur-site, series, assistant, hors-ligne, confluence]
+        suite: [dictaphone, visio, pistes, sur-site, series, assistant, hors-ligne, confluence]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

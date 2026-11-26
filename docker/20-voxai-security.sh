@@ -38,7 +38,7 @@ add_header Content-Security-Policy "$CSP" always;
 add_header X-Frame-Options "DENY" always;
 add_header X-Content-Type-Options "nosniff" always;
 add_header Referrer-Policy "no-referrer" always;
-add_header Permissions-Policy "microphone=(self), camera=(), geolocation=(), payment=(), usb=()" always;
+add_header Permissions-Policy "microphone=(self), display-capture=(self), camera=(), geolocation=(), payment=(), usb=()" always;
 add_header Cross-Origin-Opener-Policy "same-origin" always;
 CONF
 echo "VoxAI : en-têtes de sécurité générés"

@@ -232,6 +232,16 @@ La liste des enregistrements se filtre par série ; un enregistrement se rattach
 - **Plan d'action** : les actions cochées sont enregistrées et reprises dans les copies et dans Confluence (tâches terminées).
 - **💾 Sauvegarde** (⚙️ Paramètres) : les données vivent dans le navigateur. Un rappel s'affiche dans la barre latérale après 7 jours sans sauvegarde (« Plus tard » le repousse de 3 jours). **Exporter mes données** crée un fichier `.voxai` (audios, transcriptions, comptes rendus, discussions) ; **Restaurer une sauvegarde** le réimporte ici ou sur un autre poste (les enregistrements déjà présents sont ignorés).
 
+## 🎧 Enregistrer une visioconférence (Meet, Teams, Zoom) sur le même poste
+
+Avec un casque, le micro ne capte que votre voix : les participants à distance ne seraient pas dans le compte rendu. Choisissez **🎧 Micro + son de la visio** dans le dictaphone (Chrome ou Edge) : au démarrage, le navigateur demande quoi partager.
+
+- **Meet, ou Teams / Zoom dans le navigateur** : l'**onglet** de la réunion, case « Partager l'audio de l'onglet » (le plus fiable, Windows comme macOS).
+- **Application Teams ou Zoom sous Windows** : l'**écran entier**, case « Partager l'audio du système ».
+- **Application Teams ou Zoom sous macOS** : le son du système n'est pas toujours proposé ; utilisez la version web dans un onglet, ou un périphérique audio virtuel.
+
+Le micro et le son de la réunion sont mélangés dans **une seule piste** (ordre chronologique conservé) ; seul le son est enregistré, jamais l'image. Deux indicateurs (« Vous » et « Réunion ») montrent que les deux sources sont captées ; un message prévient si la réunion reste muette ou si le partage est arrêté (l'enregistrement continue alors avec le micro). L'analyse est prévenue qu'il s'agit d'une visio, pour bien distinguer les orateurs. Casque recommandé, et prévenez les participants que la réunion est enregistrée.
+
 ## 🎙️ Transcription en direct & e-mail de compte rendu
 
 - **Transcription en direct** (interrupteur sous le bouton d'enregistrement) : le texte s'affiche pendant que vous parlez, via la reconnaissance vocale du navigateur (Chrome / Edge). ⚠️ L'audio est alors aussi envoyé à Google ou Microsoft ; la fonction est désactivée par défaut. Ce brouillon est conservé avec l'enregistrement ; l'analyse IA reste la transcription de référence.
@@ -246,6 +256,7 @@ Tests de bout en bout (`tests/e2e/`, lancés par la CI à chaque modification) :
 | Fichier | Parcours couverts |
 | :--- | :--- |
 | `dictaphone` | Micro (pause, reprise, annulation, refus), import de plusieurs pistes, synthèse et transcription (orateurs, recherche, actions), copies et exports, téléchargement de l'audio, sauvegarde / restauration |
+| `visio` | Micro + son de la visio mélangés dans une piste (vérifié sur l'audio enregistré), partage sans son, annulé ou arrêté en cours, réunion muette, navigateur sans capture |
 | `pistes` | Sessions à plusieurs pistes : chaque piste transcrite séparément (Gemini ou Whisper avec horodatages), synthèse sur la transcription complète, synthèse par parties d'une longue réunion avec le LLM de l'entreprise, piste vide signalée |
 | `sur-site` | Assistant de démarrage, réglages de l'administrateur (« sans cloud »), paramètres (détection des modèles, test, enregistrement), mode Hybride, serveurs en panne |
 | `series` | Séries (saisie, rattachement, filtre, modification, suppression), suivi des actions d'une réunion à l'autre, brief, échéances, e-mail aux participants |

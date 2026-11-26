@@ -168,6 +168,26 @@
             <input type="text" id="recordTitleInput" placeholder="Titre de la conversation (ex: Point Projet, Débat...)" class="w-full bg-slate-900/50 border border-white/10 rounded-2xl px-5 py-3 text-center text-sm font-medium text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500/70 focus:bg-slate-900/80 shadow-lg transition">
           </div>
 
+          <!-- Source audio : micro seul, ou micro + son de la visioconférence (même poste) -->
+          <div id="captureBox" class="w-full max-w-md space-y-1.5">
+            <div class="capture-switch" role="radiogroup" aria-label="Source audio de l'enregistrement">
+              <label class="capture-opt"><input type="radio" name="captureSource" value="mic" checked><span>🎙️ Micro seul</span></label>
+              <label class="capture-opt" id="captureMeetingLabel"><input type="radio" name="captureSource" value="meeting"><span>🎧 Micro + son de la visio</span></label>
+            </div>
+            <p id="captureHint" class="text-[10px] text-slate-500 leading-snug"></p>
+            <details id="captureHelp" class="capture-help">
+              <summary>Comment enregistrer une visio (Meet, Teams, Zoom) sur ce poste ?</summary>
+              <ul>
+                <li><strong>Meet, ou Teams / Zoom dans le navigateur</strong> : au démarrage, choisissez l’<strong>onglet</strong> de la réunion et cochez « Partager l’audio de l’onglet ». C’est le plus fiable, sous Windows comme sous macOS.</li>
+                <li><strong>Application Teams ou Zoom sous Windows</strong> : choisissez l’<strong>écran entier</strong> et cochez « Partager l’audio du système ».</li>
+                <li><strong>Application Teams ou Zoom sous macOS</strong> : le son du système n’est pas toujours proposé par le navigateur ; utilisez la version web de la réunion dans un onglet, ou un périphérique audio virtuel.</li>
+                <li><strong>Casque recommandé</strong> : avec des haut-parleurs, le micro reprend aussi le son de la réunion (écho).</li>
+                <li>Seul le son est enregistré, jamais l’image. La transcription en direct n’utilise que le micro ; le compte rendu porte sur les deux.</li>
+                <li>Prévenez les participants que la réunion est enregistrée.</li>
+              </ul>
+            </details>
+          </div>
+
           <!-- Waveform Visualizer with Ambient Glass -->
           <div class="w-full h-40 bg-slate-900/40 rounded-3xl border border-white/10 p-5 flex flex-col items-center justify-center relative overflow-hidden shadow-2xl backdrop-blur-md">
             <canvas id="waveformCanvas" class="w-full h-full"></canvas>
@@ -181,6 +201,12 @@
               <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
               <span>48 kHz • Web Audio</span>
             </div>
+          </div>
+
+          <!-- Niveaux des deux sources pendant un enregistrement de visio -->
+          <div id="captureLevels" class="hidden w-full max-w-md grid grid-cols-2 gap-3 text-[10px]" aria-label="Niveaux sonores">
+            <div class="capture-level"><span>🎙️ Vous</span><span class="capture-level-bar"><span id="levelMic" class="capture-level-fill"></span></span></div>
+            <div class="capture-level"><span>🎧 Réunion</span><span class="capture-level-bar"><span id="levelMeeting" class="capture-level-fill"></span></span></div>
           </div>
 
           <!-- Timer with Monospace Typography -->

@@ -409,6 +409,13 @@
     return lines.length ? `\n\nContexte de la série « ${ctx.name} » :\n- ${lines.join('\n- ')}` : '';
   }
 
+  /** Visioconférence enregistrée sur le poste d'un participant : voix locale et voix distantes mélangées. */
+  function captureHint(ctx) {
+    return ctx && ctx.capture === 'visio'
+      ? "\n\nCet enregistrement est une visioconférence captée sur le poste d'un participant : sa voix (micro) et celles des participants à distance (son de la réunion) sont mélangées. Distingue bien chaque orateur et transcris aussi fidèlement les voix distantes que la voix locale."
+      : '';
+  }
+
   /** Échéances en dates absolues, calculées à partir de la date de la réunion. */
   function dateHint(ctx) {
     const d = ctx && ctx.meeting_date ? new Date(ctx.meeting_date) : null;
@@ -472,7 +479,7 @@ Règles impératives :
 4. ${REFS_RULE}
 5. Réponds UNIQUEMENT avec le JSON pur.`;
 
-    const parts = [{ text: prompt + seriesHint(ctx) + followupHint(ctx) + dateHint(ctx) }, ...(await audioParts(audioFiles, 'ENREGISTREMENT'))];
+    const parts = [{ text: prompt + captureHint(ctx) + seriesHint(ctx) + followupHint(ctx) + dateHint(ctx) }, ...(await audioParts(audioFiles, 'ENREGISTREMENT'))];
     const { text } = await geminiGenerate(cfg, {
       contents: [{ parts }],
       generationConfig: { temperature: 0.2, response_mime_type: 'application/json' }
@@ -539,7 +546,7 @@ Transcris fidèlement mot à mot cet enregistrement audio${total > 1 ? ` (piste 
 Indique les orateurs distincts et les horodatages réels (depuis le début de cette piste).
 Réponds EXCLUSIVEMENT avec un JSON pur respectant cette structure exacte :
 {"transcription": [{"speaker": "Orateur 1", "timestamp": "00:00", "text": "Texte fidèlement retranscrit..."}]}`;
-    const parts = [{ text: prompt + seriesHint(ctx) }, ...(await audioParts([af], 'PISTE'))];
+    const parts = [{ text: prompt + captureHint(ctx) + seriesHint(ctx) }, ...(await audioParts([af], 'PISTE'))];
     const { text, truncated } = await geminiGenerate(cfg, {
       contents: [{ parts }],
       generationConfig: { temperature: 0.1, response_mime_type: 'application/json' }
@@ -964,7 +971,8 @@ ${EDIT_RULE}`;
       series_id: ID_RE.test(str(r.series_id, 101)) ? r.series_id : null,
       ...(r.confluence_page && /^https?:\/\//i.test(str(r.confluence_page.url, 2000))
         ? { confluence_page: { url: str(r.confluence_page.url, 2000), title: str(r.confluence_page.title, 255) } } : {}),
-      ...(r.live_transcript ? { live_transcript: str(r.live_transcript, 500000) } : {})
+      ...(r.live_transcript ? { live_transcript: str(r.live_transcript, 500000) } : {}),
+      ...(r.capture === 'visio' ? { capture: 'visio' } : {})
     };
   }
 
@@ -1358,7 +1366,9 @@ ${EDIT_RULE}`;
       await store.put('recordings', {
         id, title, created_at: new Date().toISOString(), duration: 0, filename: '',
         mime_type: mime, file_size: 0, status: 'recorded', transcription: null,
-        summary: null, error_message: null, series_id: await validSeriesId(req.headers.get('X-Series-Id'))
+        summary: null, error_message: null, series_id: await validSeriesId(req.headers.get('X-Series-Id')),
+        // Visioconférence enregistrée sur le poste (micro + son de la réunion) : consigne pour l'analyse
+        ...(req.headers.get('X-Audio-Source') === 'visio' ? { capture: 'visio' } : {})
       });
       const f = await addFile(id, blob, mime, title, duration);
       return json(201, { id, title, filename: f.filename, duration: f.duration, status: 'recorded' });
@@ -1411,7 +1421,7 @@ ${EDIT_RULE}`;
         const start = Date.now();
         try {
           // Contexte : série (participants, type, actions ouvertes) et date de la réunion (échéances)
-          const result = await processRecording(audioFiles, cfg, { ...(series || {}), open_actions: openActions, meeting_date: rec.created_at, progress });
+          const result = await processRecording(audioFiles, cfg, { ...(series || {}), open_actions: openActions, meeting_date: rec.created_at, capture: rec.capture, progress });
           progress.start('save', 'Enregistrement du compte rendu');
           const fresh = await store.get('recordings', recId);
           if (fresh) {
