@@ -207,6 +207,75 @@ const SUMMARY = (executive, refs = [1]) => ({ title: 'Réunion multi-pistes', su
     await context.close();
   });
 
+  await t.scenario('Avancement de l’analyse : étapes, pourcentage, temps écoulé, liste des enregistrements', async () => {
+    const pause = (ms) => new Promise(r => setTimeout(r, ms));
+    const w = whisper([[{ start: 0, text: 'Salle.' }], [{ start: 0, text: 'Visio.' }]]);
+    const l = llm(() => SUMMARY('OK'));
+    const slow = (h) => async (route) => { if (route.request().method() !== 'OPTIONS') await pause(1500); return h(route); };
+    const { context, page } = await openApp(browser, base, { config: ON_PREM, servers: { 'whisper.corp.test': slow(w.handler), 'llm.corp.test': slow(l.handler) } });
+    // Toutes les étapes vues par l'interface (événements « voxai:progress »)
+    await page.evaluate(() => { window.__steps = []; document.addEventListener('voxai:progress', e => window.__steps.push(e.detail.steps.map(x => `${x.status}:${x.label}`).join(' | '))); });
+    page.nextPrompt = 'Réunion multi-pistes';
+    await page.setInputFiles('#fileUploadInput', ['salle.wav', 'visio.wav'].map(track));
+    await page.waitForSelector('#analysisProgress:not(.hidden)');
+    await page.waitForFunction(() => document.querySelectorAll('#analysisProgressSteps .analysis-step').length === 4);
+    const labels = await page.$$eval('#analysisProgressSteps .analysis-step-label', e => e.map(x => x.textContent));
+    assert(labels[0] === 'Transcription piste 1/2 « salle.wav » (Whisper · whisper.corp.test) · 0,1 Mo' && labels[1].startsWith('Transcription piste 2/2 « visio.wav »')
+      && labels[2] === 'Synthèse de la transcription complète (LLM gpt-oss-120b · llm.corp.test)' && labels[3] === 'Enregistrement du compte rendu', `étapes : ${labels.join(' | ')}`);
+    // Piste 1 terminée, piste 2 en cours : 25 %, durée et nombre de passages affichés
+    await page.waitForSelector('#analysisProgressSteps [data-step="track1"].analysis-step-running', { timeout: 10000 });
+    assert(/· 25 %/.test(await page.textContent('#analysisProgressTitle')), `pourcentage : ${await page.textContent('#analysisProgressTitle')}`);
+    assert(/^\d+ s · 1 passage$/.test(await page.textContent('[data-step="track0"] .analysis-step-time')), `étape terminée : ${await page.textContent('[data-step="track0"] .analysis-step-time')}`);
+    assert(/^depuis \d+ s$/.test(await page.textContent('[data-step="track1"] .analysis-step-time')), 'temps de l’étape en cours');
+    assert(/^\d+ s$/.test(await page.textContent('#analysisProgressTime')), 'temps total');
+    assert(/⏳ 25 % · transcription/.test(await page.textContent('#recordingsList')), `liste : ${await page.textContent('#recordingsList')}`);
+    assert(/Analyse IA en cours… 25 %/.test(await page.textContent('#detailStatusBadge')), 'badge de statut');
+    // Synthèse en cours, puis fin
+    await page.waitForSelector('#analysisProgressSteps [data-step="synth"].analysis-step-running', { timeout: 10000 });
+    assert(/· 50 %/.test(await page.textContent('#analysisProgressTitle')) && /50 % · synthèse/.test(await page.textContent('#recordingsList')), 'étape de synthèse');
+    await page.waitForFunction(() => state.activeRecording.status === 'completed', null, { timeout: 15000 });
+    await page.waitForSelector('#analysisProgress', { state: 'hidden' });
+    assert(/Analyse IA terminée en \d+ s/.test(await page.textContent('#toastMessage')), `message de fin : ${await page.textContent('#toastMessage')}`);
+    const last = await page.evaluate(() => window.__steps[window.__steps.length - 1]);
+    assert(last.split(' | ').every(x => x.startsWith('done:')), `dernières étapes : ${last}`);
+    // Relance : l'avancement repart de zéro (pas l'état de l'analyse précédente)
+    await page.click('#reprocessBtn');
+    await page.waitForSelector('#analysisProgress:not(.hidden)');
+    assert(!/100 %/.test(await page.textContent('#analysisProgressTitle')), 'avancement précédent affiché');
+    await page.waitForFunction(() => state.activeRecording.status === 'completed', null, { timeout: 15000 });
+    // Échec : étape en erreur, panneau masqué, message d'erreur
+    w.calls.length = 0;
+    const failing = whisper([[{ start: 0, text: 'Salle.' }], []]);
+    await context.route('https://whisper.corp.test/**', failing.handler);
+    await page.click('#reprocessBtn');
+    await page.waitForFunction(() => state.activeRecording.status === 'error', null, { timeout: 15000 });
+    assert(await page.isHidden('#analysisProgress'), 'panneau visible après l’échec');
+    const failed = await page.evaluate(() => window.__steps[window.__steps.length - 1]);
+    assert(/failed:Transcription piste 2\/2/.test(failed), `étape en échec : ${failed}`);
+    assert(page.jsErrors.length === 0, `erreurs : ${page.jsErrors}`);
+    await context.close();
+  });
+
+  await t.scenario('Avancement : réunion longue résumée par parties, analyse Gemini d’une piste', async () => {
+    const many = (label) => Array.from({ length: 150 }, (_, i) => ({ start: i * 20, text: `${label} ${i + 1} : ` + 'discussion détaillée du projet et des prochaines étapes. '.repeat(6) }));
+    const w = whisper([many('Salle'), many('Visio')]);
+    const l = llm((prompt) => /synthèses partielles/.test(prompt) ? SUMMARY('Consolidée') : { summary: { executive: 'Partie', decisions: [], key_points: [], tags: [], action_items: [] } });
+    const { context, page } = await openApp(browser, base, { config: ON_PREM, servers: { 'whisper.corp.test': w.handler, 'llm.corp.test': l.handler } });
+    await page.evaluate(() => { window.__labels = new Set(); document.addEventListener('voxai:progress', e => e.detail.steps.forEach(x => window.__labels.add(x.label))); });
+    await importTracks(page, ['salle.wav', 'visio.wav']);
+    const labels = await page.evaluate(() => [...window.__labels]);
+    assert(['partie 1/4, piste 1', 'partie 3/4, piste 2', 'consolidation des 4 parties'].every(x => labels.some(l2 => l2.includes(x))), `étapes des parties : ${labels.join(' | ')}`);
+    // Gemini, une piste : une étape d'analyse puis l'enregistrement
+    const g = gemini();
+    const { context: c2, page: p2 } = await openApp(browser, base, { gemini: g, config: GEMINI });
+    await p2.evaluate(() => { window.__last = null; document.addEventListener('voxai:progress', e => { window.__last = e.detail.steps.map(x => `${x.status}:${x.label}`); }); });
+    await importAudio(p2, track('memo.wav'));
+    const steps = await p2.evaluate(() => window.__last);
+    assert(steps.length === 2 && /^done:Analyse par Gemini \(transcription et synthèse\) · audio de 0,1 Mo$/.test(steps[0]) && steps[1] === 'done:Enregistrement du compte rendu', `étapes Gemini : ${steps}`);
+    await c2.close();
+    await context.close();
+  });
+
   await browser.close();
   server.close();
   t.finish();
