@@ -157,7 +157,7 @@
 
       <!-- Version (à mettre à jour à chaque release : la release vérifie qu'elle correspond au tag) -->
       <div class="px-4 py-2.5 border-t border-white/[0.06] flex items-center justify-between text-[11px] text-slate-500">
-        <span>VoxAI <span id="appVersion" class="font-mono">v1.12.6</span></span>
+        <span>VoxAI <span id="appVersion" class="font-mono">v1.12.7</span></span>
         <button type="button" id="installAppBtn" class="hidden font-semibold text-emerald-400 hover:text-emerald-300 hover:underline transition" title="Installer VoxAI comme une application (fonctionne hors ligne)">📲 Installer</button>
         <button type="button" id="versionsBtn" class="font-semibold text-indigo-400 hover:text-indigo-300 hover:underline transition" title="Historique des versions">Nouveautés</button>
       </div>
@@ -863,7 +863,16 @@
       </div>
       <div id="versionsList" class="overflow-y-auto p-6 space-y-5">
         <section class="version-entry">
-          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.12.6</span> — Enregistrer une visio (Meet, Teams, Zoom) <span class="ml-1.5 px-1.5 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 text-[10px] font-semibold align-middle">Version actuelle</span></h4>
+          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.12.7</span> — Enregistrements en MP3, VoxAI sur mobile <span class="ml-1.5 px-1.5 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 text-[10px] font-semibold align-middle">Version actuelle</span></h4>
+          <p class="text-[11px] text-slate-500 mb-1.5">26 novembre 2026</p>
+          <ul class="list-disc pl-5 space-y-1 text-xs text-slate-300">
+            <li>Le dictaphone enregistre en MP3 : compris par tous les serveurs Whisper et environ 60 % plus léger. Les anciens enregistrements WebM refusés par Whisper sont convertis automatiquement.</li>
+            <li>Sur téléphone, la liste des enregistrements s’ouvre en tiroir et le dictaphone occupe tout l’écran ; la fiche d’un enregistrement tient dans la largeur.</li>
+            <li>Sur ordinateur, la liste des enregistrements peut être repliée.</li>
+          </ul>
+        </section>
+        <section class="version-entry">
+          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.12.6</span> — Enregistrer une visio (Meet, Teams, Zoom)</h4>
           <p class="text-[11px] text-slate-500 mb-1.5">26 novembre 2026</p>
           <ul class="list-disc pl-5 space-y-1 text-xs text-slate-300">
             <li>Nouveau mode « Micro + son de la visio » (Chrome, Edge) : la voix des participants à distance est enregistrée avec la vôtre, dans une seule piste.</li>
