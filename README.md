@@ -246,6 +246,7 @@ Tests de bout en bout (`tests/e2e/`, lancés par la CI à chaque modification) :
 | Fichier | Parcours couverts |
 | :--- | :--- |
 | `dictaphone` | Micro (pause, reprise, annulation, refus), import de plusieurs pistes, synthèse et transcription (orateurs, recherche, actions), copies et exports, téléchargement de l'audio, sauvegarde / restauration |
+| `pistes` | Sessions à plusieurs pistes : chaque piste transcrite séparément (Gemini ou Whisper avec horodatages), synthèse sur la transcription complète, synthèse par parties d'une longue réunion avec le LLM de l'entreprise, piste vide signalée |
 | `sur-site` | Assistant de démarrage, réglages de l'administrateur (« sans cloud »), paramètres (détection des modèles, test, enregistrement), mode Hybride, serveurs en panne |
 | `series` | Séries (saisie, rattachement, filtre, modification, suppression), suivi des actions d'une réunion à l'autre, brief, échéances, e-mail aux participants |
 | `assistant` | Assistant d'un enregistrement et assistant global, e-mails rédigés par l'IA, corrections de synthèse (appliquer, annuler, ignorer), transcription en direct |

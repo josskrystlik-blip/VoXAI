@@ -81,11 +81,13 @@ const ANALYSIS = {
 };
 
 /**
- * Simulateur Gemini. analysis(body, n) → objet d'analyse (n = numéro de l'analyse) ;
+ * Simulateur Gemini. analysis(body, n) → objet d'analyse ou de transcription d'une piste (requêtes avec
+ * audio, n = numéro de la requête) ; synthesis(body, n) → synthèse d'une transcription (requête JSON sans
+ * audio, par défaut : celle d'analysis) ;
  * chat(text, body) → réponse texte de l'assistant, ou { parts, finishReason } pour une réponse brute. Les requêtes sont journalisées.
  */
-function gemini({ analysis = () => ANALYSIS, chat = () => 'Réponse de test.', status = null } = {}) {
-  const g = { analyses: [], chats: [], status };
+function gemini({ analysis = () => ANALYSIS, synthesis = null, chat = () => 'Réponse de test.', status = null } = {}) {
+  const g = { analyses: [], syntheses: [], chats: [], status };
   g.handler = async (route) => {
     const req = route.request();
     const body = JSON.parse(req.postData() || '{}');
@@ -96,6 +98,11 @@ function gemini({ analysis = () => ANALYSIS, chat = () => 'Réponse de test.', s
     if (isAnalysis) {
       g.analyses.push(body);
       text = JSON.stringify(analysis(body, g.analyses.length - 1));
+    } else if (body.generationConfig && body.generationConfig.response_mime_type === 'application/json') {
+      g.syntheses.push(body);
+      const n = g.syntheses.length - 1;
+      const out = synthesis ? synthesis(body, n) : analysis(body, n);
+      text = out && typeof out === 'object' && out.parts ? out : JSON.stringify(out);
     } else {
       g.chats.push(body);
       const parts = (body.contents || []).flatMap(c => c.parts || []).map(p => p.text || '');

@@ -88,16 +88,16 @@ const wav = fs.readFileSync(AUDIO);
   });
 
   await t.scenario('Import de plusieurs fichiers : session à pistes, ajout d’une piste, relance de l’analyse', async () => {
+    // Chaque piste est transcrite séparément, puis la synthèse porte sur la transcription complète
+    const lines = { 'salle.wav': 'Côté salle, tout est prêt.', 'visio.wav': 'Côté visio, on vous entend.', 'telephone.wav': 'Au téléphone, je confirme.' };
     const g = gemini({
       analysis: (body) => {
-        const n = body.contents[0].parts.filter(p => p.inline_data).length;
-        return {
-          title: 'Atelier', transcription: [
-            { file_index: 1, speaker: 'Alice', timestamp: '00:00', text: 'Côté salle, tout est prêt.' },
-            { file_index: 2, speaker: 'Bob', timestamp: '00:03', text: 'Côté visio, on vous entend.' }
-          ],
-          summary: { executive: `Analyse conjointe de ${n} fichiers.`, decisions: [{ text: 'Format hybride retenu', refs: [2] }], key_points: [], tags: [], action_items: [] }
-        };
+        const name = JSON.stringify(body).match(/'([a-z]+\.wav)'/)[1];
+        return { transcription: [{ speaker: name === 'salle.wav' ? 'Alice' : 'Bob', timestamp: '00:03', text: lines[name] }] };
+      },
+      synthesis: (body) => {
+        const n = (JSON.stringify(body).match(/\[Piste \d+ •/g) || []).length;
+        return { title: 'Atelier', summary: { executive: `Analyse conjointe de ${n} fichiers.`, decisions: [{ text: 'Format hybride retenu', refs: [2] }], key_points: [], tags: [], action_items: [] } };
       }
     });
     const { context, page } = await openApp(browser, base, { gemini: g, config: CONFIG });
@@ -108,7 +108,8 @@ const wav = fs.readFileSync(AUDIO);
     assert(page.dialogs.some(d => d.includes('Titre pour cette analyse conjointe')), 'titre de la session demandé');
     assert(rec.title === 'Atelier', `titre après analyse : ${rec.title}`); // titre de l'IA (comportement actuel)
     assert(rec.files.length === 2 && await page.textContent('#detailFilesBadge') === '2 fichiers audio', 'deux pistes attendues');
-    assert(g.analyses[0].contents[0].parts.filter(p => p.inline_data).length === 2, 'les deux fichiers doivent partir dans la même analyse');
+    assert(g.analyses.length === 2 && g.analyses.every(a => a.contents[0].parts.filter(p => p.inline_data).length === 1), 'une transcription par piste attendue');
+    assert(g.syntheses.length === 1 && ['Côté salle', 'Côté visio'].every(x => JSON.stringify(g.syntheses[0]).includes(x)), 'synthèse sur la transcription des deux pistes');
     assert(await page.$$eval('#trackPillsList .track-pill-btn', b => b.length) === 2, 'sélecteur de pistes');
     // Référence d'une décision → segment de la piste 2 : onglet transcription, piste 2 sélectionnée
     await page.click('#summaryDecisions .ref-chip');
@@ -120,7 +121,7 @@ const wav = fs.readFileSync(AUDIO);
     await page.waitForFunction(() => state.activeRecording.files && state.activeRecording.files.length === 3, null, { timeout: 10000 });
     await page.click('#reprocessBtn');
     await page.waitForFunction(() => /3 fichiers/.test(document.querySelector('#summaryExecutive').textContent), null, { timeout: 15000 });
-    assert(g.analyses.length === 2, 'relance de l’analyse');
+    assert(g.analyses.length === 5 && g.syntheses.length === 2, 'relance : trois pistes transcrites, nouvelle synthèse');
     rec = await page.evaluate(() => state.activeRecording);
     assert(rec.files.map(f => f.original_name).join() === 'salle.wav,visio.wav,telephone.wav', `pistes : ${rec.files.map(f => f.original_name)}`);
     await page.click('#trackPillsList .track-pill-btn[data-index="2"]');
