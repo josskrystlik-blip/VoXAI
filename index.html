@@ -36,8 +36,13 @@
   </div>
 
   <!-- ==================== HEADER ==================== -->
-  <header class="h-16 border-b border-white/[0.06] bg-slate-950/70 backdrop-blur-xl px-6 flex items-center justify-between z-20 shrink-0">
-    <div class="flex items-center gap-3.5">
+  <header class="h-16 border-b border-white/[0.06] bg-slate-950/70 backdrop-blur-xl px-3 md:px-6 flex items-center justify-between gap-2 z-20 shrink-0">
+    <div class="flex items-center gap-2.5 md:gap-3.5 min-w-0">
+      <!-- Liste des enregistrements : tiroir sur mobile, colonne repliable sur ordinateur -->
+      <button type="button" id="sidebarToggle" class="sidebar-toggle" aria-controls="sidebar" aria-expanded="true" title="Afficher ou masquer la liste des enregistrements">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5" stroke-width="1.8"/><path stroke-width="1.8" stroke-linecap="round" d="M9 4.5v15M5.8 8.5h1.2M5.8 11.5h1.2"/></svg>
+        <span id="sidebarCount" class="sidebar-count hidden" aria-label="enregistrements"></span>
+      </button>
       <div class="relative group cursor-pointer" id="headerLogoBtn">
         <div class="absolute -inset-1 rounded-2xl bg-gradient-to-r from-indigo-500 to-fuchsia-500 opacity-40 blur group-hover:opacity-75 transition duration-300"></div>
         <div class="relative w-10 h-10 rounded-xl bg-slate-900 border border-white/10 flex items-center justify-center shadow-lg">
@@ -49,30 +54,30 @@
       <div>
         <div class="flex items-center gap-2">
           <h1 class="text-lg font-bold tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-400 bg-clip-text text-transparent">VoxAI</h1>
-          <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-gradient-to-r from-indigo-500/20 to-purple-500/20 text-indigo-300 border border-indigo-500/30">AI Dictaphone</span>
+          <span class="hidden sm:inline text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-gradient-to-r from-indigo-500/20 to-purple-500/20 text-indigo-300 border border-indigo-500/30">AI Dictaphone</span>
         </div>
-        <p class="text-[11px] text-slate-400 font-medium">Capture vocale • Synthèse unifiée multi-audios • Confidentialité</p>
+        <p class="hidden lg:block text-[11px] text-slate-400 font-medium">Capture vocale • Synthèse unifiée multi-audios • Confidentialité</p>
       </div>
     </div>
 
     <!-- Right Controls -->
-    <div class="flex items-center gap-3">
+    <div class="flex items-center gap-1.5 md:gap-3 shrink-0">
       <!-- Hors ligne : le dictaphone fonctionne, l'analyse IA est mise en attente -->
       <span id="offlineBadge" class="hidden items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[11px] font-semibold bg-amber-500/10 text-amber-300 border border-amber-500/30" title="Le dictaphone fonctionne : les enregistrements seront analysés au retour du réseau">📴 Hors ligne</span>
 
       <!-- Active Provider Badge -->
       <button id="providerBadgeBtn" class="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-medium bg-slate-900/80 border border-white/10 hover:border-indigo-500/40 hover:bg-slate-800/60 transition shadow-sm">
         <span id="providerDot" class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-        <span id="providerName" class="text-slate-300 font-mono text-[11px]">Cloud (gemini-3.5-flash-lite)</span>
+        <span id="providerName" class="hidden md:inline text-slate-300 font-mono text-[11px]">Cloud (gemini-3.5-flash-lite)</span>
       </button>
 
       <!-- Settings Button -->
       <button id="assistantToggleBtn" type="button" aria-expanded="false" aria-controls="assistantPanel" title="Assistant IA : questions sur toutes vos réunions, e-mails, corrections de synthèse" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white shadow-sm transition">
-        <span aria-hidden="true">💬</span> Assistant
+        <span aria-hidden="true">💬</span><span class="hidden sm:inline">Assistant</span>
       </button>
       <button id="themeToggleBtn" type="button" class="theme-toggle-btn px-2.5 py-1.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-white/10 hover:border-white/20 transition shadow-sm" title="Apparence">
         <span id="themeIcon" aria-hidden="true">🌓</span>
-        <span id="themeLabel" class="theme-label">Auto</span>
+        <span id="themeLabel" class="theme-label hidden sm:inline">Auto</span>
       </button>
       <button id="openSettingsBtn" title="Paramètres IA & Souveraineté" class="p-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 text-slate-300 hover:text-white border border-white/10 hover:border-white/20 transition shadow-sm group">
         <svg class="w-4 h-4 transition-transform group-hover:rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -87,7 +92,13 @@
   <div class="flex-1 flex overflow-hidden relative z-10">
 
     <!-- ==================== SIDEBAR ==================== -->
-    <aside class="w-80 border-r border-white/[0.06] bg-slate-950/50 backdrop-blur-md flex flex-col shrink-0">
+    <aside id="sidebar" class="sidebar w-80 border-r border-white/[0.06] bg-slate-950/50 backdrop-blur-md flex flex-col shrink-0" aria-label="Enregistrements">
+      <div class="sidebar-head md:hidden">
+        <span class="text-sm font-semibold text-slate-200">Enregistrements</span>
+        <button type="button" id="sidebarClose" class="sidebar-close" aria-label="Fermer la liste">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
       <div class="p-4 border-b border-white/[0.06] flex flex-col gap-2.5">
         <button id="newRecordBtn" class="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-purple-600 hover:from-indigo-500 hover:to-purple-500 font-semibold text-xs text-white shadow-lg shadow-indigo-600/25 transition-all hover:scale-[1.01] active:scale-[0.99]">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -146,17 +157,19 @@
 
       <!-- Version (à mettre à jour à chaque release : la release vérifie qu'elle correspond au tag) -->
       <div class="px-4 py-2.5 border-t border-white/[0.06] flex items-center justify-between text-[11px] text-slate-500">
-        <span>VoxAI <span id="appVersion" class="font-mono">v1.12.6</span></span>
+        <span>VoxAI <span id="appVersion" class="font-mono">v1.12.7</span></span>
         <button type="button" id="installAppBtn" class="hidden font-semibold text-emerald-400 hover:text-emerald-300 hover:underline transition" title="Installer VoxAI comme une application (fonctionne hors ligne)">📲 Installer</button>
         <button type="button" id="versionsBtn" class="font-semibold text-indigo-400 hover:text-indigo-300 hover:underline transition" title="Historique des versions">Nouveautés</button>
       </div>
     </aside>
 
+    <div id="sidebarScrim" class="sidebar-scrim" hidden></div>
+
     <!-- ==================== CENTER WORKSPACE ==================== -->
     <main class="flex-1 flex flex-col overflow-hidden relative">
 
       <!-- ==================== SCREEN 1: ENREGISTREUR (DICTAPHONE) ==================== -->
-      <section id="recorderView" class="flex-1 flex flex-col items-center justify-center p-8 relative overflow-y-auto">
+      <section id="recorderView" class="flex-1 flex flex-col items-center justify-center p-4 md:p-8 relative overflow-y-auto">
         <div class="max-w-xl w-full flex flex-col items-center text-center space-y-6">
 
           <!-- Titre d'enregistrement optionnel -->
@@ -267,14 +280,14 @@
       <section id="detailsView" class="hidden flex-1 flex flex-col h-full overflow-hidden">
 
         <!-- Top Bar of Detail -->
-        <div class="p-6 border-b border-white/[0.06] bg-slate-950/40 backdrop-blur-xl flex flex-col gap-4 shrink-0">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <h2 id="detailTitle" class="text-xl font-bold text-white tracking-tight">Titre de la conversation</h2>
+        <div class="detail-top p-4 md:p-6 border-b border-white/[0.06] bg-slate-950/40 backdrop-blur-xl flex flex-col gap-4 shrink-0">
+          <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div class="flex items-center gap-3 flex-wrap min-w-0">
+              <h2 id="detailTitle" class="text-lg md:text-xl font-bold text-white tracking-tight break-words min-w-0">Titre de la conversation</h2>
               <span id="detailStatusBadge" class="text-xs px-2.5 py-0.5 rounded-full font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Terminé</span>
             </div>
 
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 flex-wrap">
               <button id="reprocessBtn" title="Relancer l'analyse IA" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-200 border border-white/10 hover:border-indigo-500/40 transition shadow-sm">
                 <svg class="w-3.5 h-3.5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
@@ -351,7 +364,7 @@
           </div>
 
           <!-- Embedded Luxury Audio Player -->
-          <div class="glass-card p-3.5 flex items-center gap-4 shadow-xl border border-white/10">
+          <div class="glass-card p-3.5 flex flex-wrap items-center gap-x-4 gap-y-2.5 shadow-xl border border-white/10">
             <!-- Play/Pause Button -->
             <button id="playerPlayBtn" class="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white flex items-center justify-center shrink-0 shadow-lg shadow-indigo-600/30 transition-transform active:scale-95">
               <svg id="playerPlayIcon" class="w-4 h-4 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -373,7 +386,7 @@
             </div>
 
             <span id="playerCurrentTime" class="text-xs font-mono text-slate-300 w-11 text-right">00:00</span>
-            <input type="range" id="playerSeek" value="0" min="0" max="100" class="flex-1 cursor-pointer">
+            <input type="range" id="playerSeek" value="0" min="0" max="100" class="flex-1 min-w-[110px] cursor-pointer">
             <span id="playerTotalTime" class="text-xs font-mono text-slate-400 w-11">00:00</span>
 
             <!-- Speed Selector -->
@@ -398,20 +411,20 @@
         </div>
 
         <!-- Navigation Tabs -->
-        <div class="border-b border-white/[0.06] bg-slate-950/20 px-6 flex items-center gap-8 text-sm font-semibold shrink-0">
+        <div class="border-b border-white/[0.06] bg-slate-950/20 px-4 md:px-6 flex items-center gap-5 md:gap-8 text-sm font-semibold shrink-0 overflow-x-auto whitespace-nowrap">
           <button id="tabSummaryBtn" class="tab-btn active py-3.5 border-b-2 border-indigo-500 text-indigo-400 flex items-center gap-2 transition">
-            <span>✨</span> Synthèse IA & Plan d'action
+            <span>✨</span> Synthèse<span class="hidden sm:inline"> IA & Plan d'action</span>
           </button>
           <button id="tabTranscriptBtn" class="tab-btn py-3.5 border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-2 transition">
-            <span>📝</span> Transcription mot pour mot
+            <span>📝</span> Transcription<span class="hidden sm:inline"> mot pour mot</span>
           </button>
           <button id="tabChatBtn" class="tab-btn py-3.5 border-b-2 border-transparent text-slate-400 hover:text-slate-200 flex items-center gap-2 transition">
-            <span>💬</span> Assistant IA
+            <span>💬</span> Assistant<span class="hidden sm:inline"> IA</span>
           </button>
         </div>
 
         <!-- Tab Contents -->
-        <div class="flex-1 overflow-y-auto p-6">
+        <div class="detail-body flex-1 overflow-y-auto p-4 md:p-6">
 
           <!-- TAB 1: SYNTHESE -->
           <div id="tabContentSummary" class="max-w-4xl mx-auto space-y-6">
@@ -850,7 +863,16 @@
       </div>
       <div id="versionsList" class="overflow-y-auto p-6 space-y-5">
         <section class="version-entry">
-          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.12.6</span> — Enregistrer une visio (Meet, Teams, Zoom) <span class="ml-1.5 px-1.5 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 text-[10px] font-semibold align-middle">Version actuelle</span></h4>
+          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.12.7</span> — Enregistrements en MP3, VoxAI sur mobile <span class="ml-1.5 px-1.5 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 text-[10px] font-semibold align-middle">Version actuelle</span></h4>
+          <p class="text-[11px] text-slate-500 mb-1.5">26 novembre 2026</p>
+          <ul class="list-disc pl-5 space-y-1 text-xs text-slate-300">
+            <li>Le dictaphone enregistre en MP3 : compris par tous les serveurs Whisper et environ 60 % plus léger. Les anciens enregistrements WebM refusés par Whisper sont convertis automatiquement.</li>
+            <li>Sur téléphone, la liste des enregistrements s’ouvre en tiroir et le dictaphone occupe tout l’écran ; la fiche d’un enregistrement tient dans la largeur.</li>
+            <li>Sur ordinateur, la liste des enregistrements peut être repliée.</li>
+          </ul>
+        </section>
+        <section class="version-entry">
+          <h4 class="text-sm font-bold text-white"><span class="font-mono">v1.12.6</span> — Enregistrer une visio (Meet, Teams, Zoom)</h4>
           <p class="text-[11px] text-slate-500 mb-1.5">26 novembre 2026</p>
           <ul class="list-disc pl-5 space-y-1 text-xs text-slate-300">
             <li>Nouveau mode « Micro + son de la visio » (Chrome, Edge) : la voix des participants à distance est enregistrée avec la vôtre, dans une seule piste.</li>
@@ -1364,6 +1386,7 @@
     </div>
   </div>
 
+  <script src="mp3.js"></script>
   <script src="db.js"></script>
   <script src="app.js"></script>
   <script src="series.js"></script>

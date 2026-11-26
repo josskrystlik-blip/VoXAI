@@ -6,6 +6,9 @@
 !live.js
 !series.js
 !onboarding.js
+!mp3.js
+!mp3-worker.js
+!pcm-worklet.js
 !sw.js
 !manifest.webmanifest
 !icons/**

@@ -89,7 +89,8 @@ async function controlled(page) {
     await page.click('#pendingRunBtn');
     await page.waitForFunction(() => state.recordings.every(r => r.status === 'completed'), null, { timeout: 20000 });
     assert(await page.isHidden('#pendingBanner') && whisper.calls === 2 && g.analyses.length === 0, `analyses : Whisper ${whisper.calls}, Google ${g.analyses.length}`);
-    assert((await page.textContent('#summaryExecutive')).includes('Synthèse produite sur site.'), 'page ouverte non rafraîchie');
+    // La liste est mise à jour avant la fiche ouverte (selectRecording) : attendre l'affichage
+    await page.waitForFunction(() => document.querySelector('#summaryExecutive').textContent.includes('Synthèse produite sur site.'), null, { timeout: 10000 });
     await context.close();
   });
 

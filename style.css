@@ -751,3 +751,50 @@ mark.search-hit { background: rgba(250, 204, 21, 0.35); color: inherit; border-r
 :root[data-theme="light"] .capture-help summary { color: #4338ca; }
 :root[data-theme="light"] .capture-level { color: #475569; }
 :root[data-theme="light"] .capture-level-bar { background: rgba(15, 23, 42, .1); }
+
+/* ==============================================================================
+   Liste des enregistrements : tiroir sur mobile, colonne repliable sur ordinateur
+   ============================================================================== */
+.sidebar-toggle { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 12px; color: rgb(203 213 225); background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(255, 255, 255, 0.1); transition: border-color .15s, color .15s; flex-shrink: 0; }
+.sidebar-toggle:hover { color: #fff; border-color: rgba(129, 140, 248, 0.45); }
+.sidebar-toggle:focus-visible, .sidebar-close:focus-visible { outline: 2px solid #818cf8; outline-offset: 2px; }
+.sidebar-count { position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9999px; font-size: 10px; font-weight: 700; line-height: 18px; text-align: center; color: #fff; background: linear-gradient(90deg, #4f46e5, #7c3aed); }
+.sidebar-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 0 16px; }
+.sidebar-close { display: inline-flex; padding: 6px; border-radius: 10px; color: rgb(148 163 184); }
+.sidebar-close:hover { color: #fff; background: rgba(255, 255, 255, 0.06); }
+.sidebar-scrim { display: none; }
+
+@media (min-width: 768px) {
+  body.sidebar-collapsed .sidebar { display: none; }
+}
+
+@media (max-width: 767px) {
+  /* Tiroir sous l'en-tête (64 px) : le bouton de la liste reste visible pour la refermer */
+  aside.sidebar {
+    position: fixed; z-index: 45; inset: 64px auto 0 0;
+    width: min(86vw, 340px);
+    background: var(--bg-surface, #0b1120);
+    backdrop-filter: none;
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.45);
+    transform: translateX(-102%);
+    visibility: hidden;
+    transition: transform .22s ease-out, visibility 0s linear .22s;
+  }
+  body.sidebar-open aside.sidebar { transform: none; visibility: visible; transition: transform .22s ease-out, visibility 0s; }
+  .sidebar-scrim { display: block; position: fixed; inset: 64px 0 0 0; z-index: 44; background: rgba(2, 6, 23, 0.55); backdrop-filter: blur(2px); }
+  .sidebar-scrim[hidden] { display: none; }
+  body.sidebar-open { overscroll-behavior: contain; }
+  /* Fiche d'un enregistrement : toute la page défile (l'en-tête de la fiche n'occupe plus l'écran) */
+  #detailsView { overflow-y: auto; }
+  #detailsView .detail-body { flex: none; overflow: visible; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  aside.sidebar, body.sidebar-open aside.sidebar { transition: none; }
+}
+
+:root[data-theme="light"] .sidebar-toggle { color: #334155; background: #fff; border-color: rgba(15, 23, 42, 0.12); }
+:root[data-theme="light"] .sidebar-toggle:hover { color: #312e81; }
+:root[data-theme="light"] .sidebar-close { color: #475569; }
+:root[data-theme="light"] .sidebar-close:hover { color: #0f172a; background: rgba(15, 23, 42, 0.05); }
+:root[data-theme="light"] .sidebar-scrim { background: rgba(15, 23, 42, 0.35); }
